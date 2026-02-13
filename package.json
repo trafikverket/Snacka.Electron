@@ -3,26 +3,27 @@
   "workspaces": [
     "workspaces/*"
   ],
-  "productName": "Rocket.Chat",
-  "name": "rocketchat",
-  "description": "Official OSX, Windows, and Linux Desktop Clients for Rocket.Chat",
+  "productName": "Snacka",
+  "name": "snacka",
+  "description": "Desktop-klient för Snacka",
   "version": "4.12.0",
-  "author": "Rocket.Chat Support <support@rocket.chat>",
+  "author": "Trafikverket",
   "copyright": "© 2016-2026, Rocket.Chat",
-  "homepage": "https://rocket.chat",
+  "homepage": "https://www.trafikverket.se",
   "license": "MIT",
   "goUrlShortener": "go.rocket.chat",
   "keywords": [
-    "rocketchat",
+    "snacka",
+    "trafikverket",
     "desktop",
     "electron"
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/RocketChat/Rocket.Chat.Electron.git"
+    "url": "git+https://github.com/trafikverket/Snacka.Electron.git"
   },
   "bugs": {
-    "url": "https://github.com/RocketChat/Rocket.Chat.Electron/issues"
+    "url": "https://github.com/trafikverket/Snacka.Electron/issues"
   },
   "main": "app/main.js",
   "scripts": {

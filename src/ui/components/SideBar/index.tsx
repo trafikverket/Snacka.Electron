@@ -97,8 +97,8 @@ export const SideBar = () => {
                 key={server.url}
                 url={server.url}
                 title={
-                  server.title === 'Rocket.Chat' &&
-                  new URL(server.url).hostname !== 'open.rocket.chat'
+                  server.title === 'Snacka' &&
+                  new URL(server.url).hostname !== 'snacka.app.trafikverket.se'
                     ? `${server.title} - ${server.url}`
                     : server.title ?? server.url
                 }

@@ -68,7 +68,7 @@ export const verifyExecutableSignature = async (
   let hasFailures = false;
 
   for (const dir of unpackedDirs) {
-    const exePath = path.join(distPath, dir, 'Rocket.Chat.exe');
+    const exePath = path.join(distPath, dir, 'Snacka.exe');
 
     if (!fs.existsSync(exePath)) {
       core.debug(`No executable found in ${dir}`);

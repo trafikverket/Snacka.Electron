@@ -1,5 +1,5 @@
-owner: RocketChat
-repo: Rocket.Chat.Electron
+owner: trafikverket
+repo: Snacka.Electron
 provider: github
 vPrefixedTagName: false
-channel: beta 
+channel: beta

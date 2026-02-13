@@ -55,7 +55,7 @@ import {
 const start = async (): Promise<void> => {
   setUserDataDirectory();
 
-  logger.info('Starting Rocket.Chat Desktop application');
+  logger.info('Starting Snacka Desktop application');
 
   setupWebContentsLogging();
 

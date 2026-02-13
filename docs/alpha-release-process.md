@@ -4,7 +4,7 @@ This document describes how to create alpha releases for QA testing and early cu
 
 ## Overview
 
-The Rocket.Chat Desktop app supports three release channels:
+The Snacka Desktop app supports three release channels:
 - **Stable** (`latest`) - Production releases for all users
 - **Beta** - Pre-release testing with broader audience
 - **Alpha** - Early testing for QA and select customers
@@ -86,9 +86,9 @@ Create `update.json` in the user data directory:
 
 | Platform | Location |
 |----------|----------|
-| Windows | `%APPDATA%\Rocket.Chat\update.json` |
-| macOS | `~/Library/Application Support/Rocket.Chat/update.json` |
-| Linux | `~/.config/Rocket.Chat/update.json` |
+| Windows | `%APPDATA%\Snacka\update.json` |
+| macOS | `~/Library/Application Support/Snacka/update.json` |
+| Linux | `~/.config/Snacka/update.json` |
 
 Content:
 ```json

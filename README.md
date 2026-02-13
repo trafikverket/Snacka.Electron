@@ -1,9 +1,9 @@
 # Rocket.Chat Desktop App
 
-[![Build Status](https://github.com/RocketChat/Rocket.Chat.Electron/actions/workflows/build-release.yml/badge.svg)](https://github.com/RocketChat/Rocket.Chat.Electron/actions)
-![Project Dependencies](https://img.shields.io/librariesio/github/RocketChat/Rocket.Chat.Electron)
-[![GitHub All Releases](https://img.shields.io/github/downloads/RocketChat/Rocket.Chat.Electron/total.svg)](https://github.com/RocketChat/Rocket.Chat.Electron/releases/latest)
-![GitHub](https://img.shields.io/github/license/RocketChat/Rocket.Chat.Electron.svg)
+[![Build Status](https://github.com/trafikverket/Snacka.Electron/actions/workflows/build-release.yml/badge.svg)](https://github.com/trafikverket/Snacka.Electron/actions)
+![Project Dependencies](https://img.shields.io/librariesio/github/trafikverket/Snacka.Electron)
+[![GitHub All Releases](https://img.shields.io/github/downloads/trafikverket/Snacka.Electron/total.svg)](https://github.com/trafikverket/Snacka.Electron/releases/latest)
+![GitHub](https://img.shields.io/github/license/trafikverket/Snacka.Electron.svg)
 
 Desktop application for [Rocket.Chat][] available for macOS, Windows and Linux
 using [Electron][].
@@ -71,8 +71,8 @@ Prerequisites:
 Now just clone and start the app:
 
 ```sh
-git clone https://github.com/RocketChat/Rocket.Chat.Electron.git
-cd Rocket.Chat.Electron
+git clone https://github.com/trafikverket/Snacka.Electron.git
+cd Snacka.Electron
 yarn
 yarn start
 ```
@@ -258,7 +258,7 @@ Released under the MIT license.
 [your experience]: https://survey.zohopublic.com/zs/e4BUFG
 [Blog]: https://rocket.chat/case-studies/?utm_source=github&utm_medium=readme&utm_campaign=community
 [Sign Up!]: https://rocket.chat/newsletter/?utm_source=github&utm_medium=readme&utm_campaign=community
-[Releases]: https://github.com/RocketChat/Rocket.Chat.Electron/releases/latest
+[Releases]: https://github.com/trafikverket/Snacka.Electron/releases/latest
 [ongoing changes in Rocket.Chat codebase]: https://forums.rocket.chat/t/moving-away-from-meteor-and-beyond/3270
 [rollup]: https://github.com/rollup/rollup
 [Jest]: https://jestjs.io/

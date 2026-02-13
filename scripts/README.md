@@ -1,6 +1,6 @@
 # Testing Scripts
 
-This directory contains automation scripts for testing Rocket.Chat Desktop on Linux.
+This directory contains automation scripts for testing Snacka Desktop on Linux.
 
 ## Scripts
 
@@ -48,7 +48,7 @@ Installs Volta (JavaScript toolchain manager) if it's not already installed. Vol
 
 ### `linux-test-deb.sh`
 
-Builds, installs, and runs the Rocket.Chat Desktop .deb package for testing purposes.
+Builds, installs, and runs the Snacka Desktop .deb package for testing purposes.
 
 #### Usage
 
@@ -96,7 +96,7 @@ Only build and install, don't run:
    - Automatically fixes missing dependencies with `apt-get install -f`
 
 4. **Runs the installed app**
-   - Launches Rocket.Chat Desktop from `/opt/Rocket.Chat/rocketchat-desktop`
+   - Launches Snacka Desktop from `/opt/Snacka/snacka-desktop`
    - Runs in background and displays the process ID
 
 #### Requirements
@@ -128,7 +128,7 @@ The script will exit with a non-zero status code if any step fails. Common issue
 
 - **Build fails**: Check that all dependencies are installed (`yarn install`)
 - **Install fails**: Ensure you have sudo access and the .deb file is valid
-- **App not found**: The installation path may differ; check `/opt/Rocket.Chat/` or use `which rocketchat-desktop`
+- **App not found**: The installation path may differ; check `/opt/Snacka/` or use `which snacka-desktop`
 
 #### Notes
 

@@ -157,7 +157,7 @@ export const migrations = {
   }),
   '>=4.1.0': (before: PersistableValues_3_9_6): PersistableValues_4_1_0 => ({
     ...before,
-    mainWindowTitle: 'Rocket.Chat',
+    mainWindowTitle: 'Snacka',
     machineTheme: 'light',
   }),
   '>=4.2.0': (before: PersistableValues_4_1_0): PersistableValues_4_2_0 => ({

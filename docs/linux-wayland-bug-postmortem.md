@@ -2,14 +2,14 @@
 
 ## Issue Reference
 
-- **GitHub Issue**: [#3154](https://github.com/RocketChat/Rocket.Chat.Electron/issues/3154)
-- **Related PR**: [#3171](https://github.com/RocketChat/Rocket.Chat.Electron/pull/3171)
+- **GitHub Issue**: [#3154](https://github.com/Trafikverket/Trafikverket.Snacka.Electron/issues/3154)
+- **Related PR**: [#3171](https://github.com/Trafikverket/Trafikverket.Snacka.Electron/pull/3171)
 - **Date**: January 2026
 - **Severity**: Critical (application crash/segfault)
 
 ## Executive Summary
 
-Rocket.Chat Desktop crashes with SEGFAULT when environment variables suggest a Wayland session but no valid Wayland compositor is available. The initial fix attempt using `app.commandLine.appendSwitch()` was **ineffective** because Chromium's display platform initialization occurs before any Electron JavaScript code executes. The solution requires a **shell wrapper script** that detects the display server situation and passes appropriate command-line flags before the binary starts.
+Snacka Desktop crashes with SEGFAULT when environment variables suggest a Wayland session but no valid Wayland compositor is available. The initial fix attempt using `app.commandLine.appendSwitch()` was **ineffective** because Chromium's display platform initialization occurs before any Electron JavaScript code executes. The solution requires a **shell wrapper script** that detects the display server situation and passes appropriate command-line flags before the binary starts.
 
 ---
 
@@ -17,7 +17,7 @@ Rocket.Chat Desktop crashes with SEGFAULT when environment variables suggest a W
 
 ### Problem
 
-Rocket.Chat Desktop crashes with SEGFAULT when environment variables suggest a Wayland session but no valid Wayland compositor is available, because Chromium's display platform initialization occurs before any Electron JavaScript code executes.
+Snacka Desktop crashes with SEGFAULT when environment variables suggest a Wayland session but no valid Wayland compositor is available, because Chromium's display platform initialization occurs before any Electron JavaScript code executes.
 
 ### Solution
 
@@ -33,7 +33,7 @@ All test scenarios pass on Ubuntu 22.04 and Fedora 42 (physical and VM). The wra
 
 ### PR
 
-[#3171](https://github.com/RocketChat/Rocket.Chat.Electron/pull/3171)
+[#3171](https://github.com/Trafikverket/Trafikverket.Snacka.Electron/pull/3171)
 
 ---
 
@@ -41,7 +41,7 @@ All test scenarios pass on Ubuntu 22.04 and Fedora 42 (physical and VM). The wra
 
 ### Symptoms
 
-Users reported segmentation faults when launching Rocket.Chat Desktop on:
+Users reported segmentation faults when launching Snacka Desktop on:
 
 - Ubuntu 22.04 LTS with X11 sessions
 - SSH sessions into machines with graphical desktops
@@ -239,7 +239,7 @@ Command-line flags take precedence over environment-based auto-detection.
 
 ## The Fix
 
-### Wrapper Script (`/opt/Rocket.Chat/rocketchat-desktop`)
+### Wrapper Script (`/opt/Snacka/snacka-desktop`)
 
 ```bash
 #!/bin/bash
@@ -254,7 +254,7 @@ else
     [ ! -S "$SOCKET" ] && EXTRA_ARGS="--ozone-platform=x11"
 fi
 
-exec /opt/Rocket.Chat/rocketchat-desktop.bin $EXTRA_ARGS "$@"
+exec /opt/Snacka/snacka-desktop.bin $EXTRA_ARGS "$@"
 ```
 
 ### Detection Logic
@@ -327,7 +327,7 @@ rocketchat-desktop --ozone-platform=x11
 
 ```bash
 # Should show what the wrapper decides
-bash -x /opt/Rocket.Chat/rocketchat-desktop --help 2>&1 | grep ozone
+bash -x /opt/Snacka/snacka-desktop --help 2>&1 | grep ozone
 ```
 
 ---

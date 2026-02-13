@@ -24,7 +24,7 @@ declare global {
   }
 }
 
-console.log('[Rocket.Chat Desktop] Preload.ts');
+console.log('[Snacka Desktop] Preload.ts');
 
 contextBridge.exposeInMainWorld('JitsiMeetElectron', JitsiMeetElectron);
 contextBridge.exposeInMainWorld('RocketChatDesktop', RocketChatDesktop);
@@ -37,7 +37,7 @@ const start = async (): Promise<void> => {
     return;
   }
   startInProgress = true;
-  console.log('[Rocket.Chat Desktop] Preload.ts start fired');
+  console.log('[Snacka Desktop] Preload.ts start fired');
   const serverUrl = await invoke('server-view/get-url');
 
   if (retryCount > 5) {
@@ -46,8 +46,8 @@ const start = async (): Promise<void> => {
   }
 
   if (!serverUrl) {
-    console.log('[Rocket.Chat Desktop] serverUrl is not defined');
-    console.log('[Rocket.Chat Desktop] Preload start - retrying in 1 seconds');
+    console.log('[Snacka Desktop] serverUrl is not defined');
+    console.log('[Snacka Desktop] Preload start - retrying in 1 seconds');
     startInProgress = false;
     setTimeout(start, 1000);
     retryCount += 1;
@@ -64,9 +64,9 @@ const start = async (): Promise<void> => {
 
   await invoke('server-view/ready');
 
-  console.log('[Rocket.Chat Desktop] waiting for RocketChatDesktop.onReady');
+  console.log('[Snacka Desktop] waiting for RocketChatDesktop.onReady');
   RocketChatDesktop.onReady(() => {
-    console.log('[Rocket.Chat Desktop] RocketChatDesktop.onReady fired');
+    console.log('[Snacka Desktop] RocketChatDesktop.onReady fired');
     listen(
       WEBVIEW_DID_NAVIGATE,
       debounce(() => {
@@ -85,6 +85,6 @@ const start = async (): Promise<void> => {
   });
 };
 
-console.log('[Rocket.Chat Desktop] waiting for window load');
+console.log('[Snacka Desktop] waiting for window load');
 window.addEventListener('load', start);
 window.addEventListener('DOMContentLoaded', start);

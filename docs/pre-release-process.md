@@ -4,7 +4,7 @@ This document describes how to create alpha and beta releases for QA testing and
 
 ## Overview
 
-The Rocket.Chat Desktop app supports three release channels:
+The Snacka Desktop app supports three release channels:
 
 - **Stable** (`latest`) - Production releases for all users
 - **Beta** - Pre-release testing with broader audience
@@ -95,7 +95,7 @@ git push origin 4.12.0-beta.1
 
 1. Open **Settings** in the app (gear icon)
 2. Enable **Developer Mode** (scroll down to find it)
-3. Go to **Help > About** (or **Rocket.Chat > About** on macOS)
+3. Go to **Help > About** (or **Snacka > About** on macOS)
 4. You will see an **Update Channel** dropdown
 5. Select the desired channel:
    - **Stable** - Production releases only
@@ -111,9 +111,9 @@ Create `update.json` in the user data directory:
 
 | Platform | Location                                                |
 | -------- | ------------------------------------------------------- |
-| Windows  | `%APPDATA%\Rocket.Chat\update.json`                     |
-| macOS    | `~/Library/Application Support/Rocket.Chat/update.json` |
-| Linux    | `~/.config/Rocket.Chat/update.json`                     |
+| Windows  | `%APPDATA%\Snacka\update.json`                     |
+| macOS    | `~/Library/Application Support/Snacka/update.json` |
+| Linux    | `~/.config/Snacka/update.json`                     |
 
 Content for alpha channel:
 
@@ -218,8 +218,8 @@ With Developer Mode enabled, open the About dialog - the current channel is show
 
 The channel preference is stored in the app's config file:
 
-- **Windows**: `%APPDATA%\Rocket.Chat\config.json`
-- **macOS**: `~/Library/Application Support/Rocket.Chat/config.json`
-- **Linux**: `~/.config/Rocket.Chat/config.json`
+- **Windows**: `%APPDATA%\Snacka\config.json`
+- **macOS**: `~/Library/Application Support/Snacka/config.json`
+- **Linux**: `~/.config/Snacka/config.json`
 
 Look for the `updateChannel` key (values: `latest`, `beta`, or `alpha`).

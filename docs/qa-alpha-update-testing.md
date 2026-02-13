@@ -4,23 +4,23 @@ This guide explains how to test the alpha update flow from `4.12.0-alpha.1` to `
 
 ## Prerequisites
 
-- Access to the GitHub releases page: https://github.com/RocketChat/Rocket.Chat.Electron/releases
-- A clean test environment (no previous Rocket.Chat Desktop installation, or uninstall first)
+- Access to the GitHub releases page: https://github.com/Trafikverket/Trafikverket.Snacka.Electron/releases
+- A clean test environment (no previous Snacka Desktop installation, or uninstall first)
 
 ## Step 1: Download and Install Alpha 1
 
-1. Go to [GitHub Releases](https://github.com/RocketChat/Rocket.Chat.Electron/releases)
+1. Go to [GitHub Releases](https://github.com/Trafikverket/Trafikverket.Snacka.Electron/releases)
 2. Find the release **4.12.0-alpha.1** (marked as "Pre-release")
 3. Download the installer for your platform:
-   - **Windows**: `rocketchat-4.12.0-alpha.1-win-x64.exe`
-   - **macOS**: `rocketchat-4.12.0-alpha.1-mac-universal.dmg`
-   - **Linux**: `rocketchat-4.12.0-alpha.1-linux-amd64.deb` or `.AppImage`
+   - **Windows**: `snacka-4.12.0-alpha.1-win-x64.exe`
+   - **macOS**: `snacka-4.12.0-alpha.1-mac-universal.dmg`
+   - **Linux**: `snacka-4.12.0-alpha.1-linux-amd64.deb` or `.AppImage`
 4. Install and launch the application
 
 ## Step 2: Verify Alpha 1 Version
 
 1. Open the app
-2. Go to **Help > About** (or **Rocket.Chat > About** on macOS)
+2. Go to **Help > About** (or **Snacka > About** on macOS)
 3. Confirm the version shows **4.12.0-alpha.1**
 
 ## Step 3: Enable Alpha Update Channel
@@ -94,6 +94,6 @@ When reporting issues, please include:
 3. Steps to reproduce the issue
 4. Any error messages displayed
 5. App logs if available:
-   - **Windows**: `%APPDATA%\Rocket.Chat\logs`
-   - **macOS**: `~/Library/Logs/Rocket.Chat`
-   - **Linux**: `~/.config/Rocket.Chat/logs`
+   - **Windows**: `%APPDATA%\Snacka\logs`
+   - **macOS**: `~/Library/Logs/Snacka`
+   - **Linux**: `~/.config/Snacka/logs`

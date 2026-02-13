@@ -1,5 +1,5 @@
-name: Rocket.Chat Desktop App Release Action
-description: Releases the Rocket.Chat Desktop app
+name: Snacka Desktop App Release Action
+description: Releases the Snacka Desktop app
 
 inputs:
   ref:
