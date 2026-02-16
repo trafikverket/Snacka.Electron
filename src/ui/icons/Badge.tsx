@@ -5,7 +5,7 @@ type BadgeProps = {
   backgroundColor?: string;
 };
 
-const Badge = ({ value, backgroundColor = '#F5455C' }: BadgeProps) => {
+const Badge = ({ value, backgroundColor = '#D70000' }: BadgeProps) => {
   const color = '#FFFFFF';
 
   return (
