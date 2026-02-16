@@ -101,4 +101,3 @@ const MacOSAppIcon = () => (
   </svg>
 );
 export default MacOSAppIcon;
-9

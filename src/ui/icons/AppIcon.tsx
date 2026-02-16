@@ -5,7 +5,6 @@ type AppIconProps = {
   color?: string;
 };
 
-
 const AppIcon = ({ children, color = '#D70000' }: AppIconProps) => (
   <svg
     width='100%'
