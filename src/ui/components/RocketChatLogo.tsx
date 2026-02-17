@@ -8,7 +8,7 @@ export const RocketChatLogo = () => {
       xmlns='http://www.w3.org/2000/svg'
       xmlnsXlink='http://www.w3.org/1999/xlink'
       xmlSpace='preserve'
-      xmlnsSerif='http://www.serif.com/'
+      // xmlnsSerif borttagen, ej giltigt attribut
       style={{
         fillRule: 'evenodd',
         clipRule: 'evenodd',
