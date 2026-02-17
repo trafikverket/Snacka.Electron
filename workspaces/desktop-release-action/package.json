@@ -1,6 +1,6 @@
 {
   "private": true,
-  "name": "@snacka/desktop-release-action",
+  "name": "@rocket.chat/desktop-release-action",
   "version": "1.0.0",
   "scripts": {
     "build": "rimraf dist && ncc build src/index.ts -o dist",
