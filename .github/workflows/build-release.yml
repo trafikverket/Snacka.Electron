@@ -86,11 +86,11 @@ jobs:
 
       - uses: ./workspaces/desktop-release-action
         with:
-          mac_csc_link: ${{ secrets.MAC_CSC_LINK }}
-          mac_csc_key_password: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          mac_apple_id: ${{ secrets.APPLEID }}
-          mac_apple_id_password: ${{ secrets.APPLEIDPASS }}
-          mac_asc_provider: '6756483881'
+          # mac_csc_link: ${{ secrets.MAC_CSC_LINK }}
+          # mac_csc_key_password: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          # mac_apple_id: ${{ secrets.APPLEID }}
+          # mac_apple_id_password: ${{ secrets.APPLEIDPASS }}
+          # mac_asc_provider: '6756483881'
           github_token: ${{ steps.app-token.outputs.token }}
         #  gcp_sa_json: ${{ secrets.GCP_SA_JSON }}
         #  win_kms_key_resource: ${{ secrets.WIN_KMS_KEY_RESOURCE }}
