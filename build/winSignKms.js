@@ -58,13 +58,13 @@ function checkAvailableTools() {
       'C:\\Program Files\\Google\\Cloud SDK\\google-cloud-sdk\\bin\\gcloud.cmd';
     const gcloudWingetPath2 = process.env.LOCALAPPDATA
       ? path.join(
-          process.env.LOCALAPPDATA,
-          'Google',
-          'Cloud SDK',
-          'google-cloud-sdk',
-          'bin',
-          'gcloud.cmd'
-        )
+        process.env.LOCALAPPDATA,
+        'Google',
+        'Cloud SDK',
+        'google-cloud-sdk',
+        'bin',
+        'gcloud.cmd'
+      )
       : null;
 
     const jsignAvailable = fs.existsSync(jsignChocolateyPath);
@@ -305,7 +305,7 @@ signWindowsOnWindows = async function (config) {
   );
 
   const input = config.path;
-  const name = config.name || 'Rocket.Chat';
+  const name = config.name || 'Snacka';
   const { site } = config;
 
   // Skip files that don't need standard Authenticode signing
