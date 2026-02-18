@@ -25,12 +25,12 @@ exports.default = async function afterSign(context) {
 
     notarize({
       tool: 'notarytool',
-      appBundleId: 'chat.rocket',
+      appBundleId: 'trvSnacka',
       appPath: `${appOutDir}/${appName}.app`,
       appleId: process.env.APPLEID,
       appleIdPassword: process.env.APPLEIDPASS,
-      ascProvider: 'S6UPZG7ZR3',
-      teamId: 'S6UPZG7ZR3',
+      ascProvider: 'XY7ZAL79CX',
+      teamId: 'XY7ZAL79CX',
     })
       .then(() => {
         clearInterval(timer);

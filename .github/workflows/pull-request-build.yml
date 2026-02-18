@@ -159,7 +159,7 @@ jobs:
           FORCE_NOTARIZE: true
           APPLEID: ${{ secrets.APPLEID }}
           APPLEIDPASS: ${{ secrets.APPLEIDPASS }}
-          ASC_PROVIDER: 'S6UPZG7ZR3'
+          ASC_PROVIDER: 'XY7ZAL79CX'
 
       - name: Build Ubuntu Package
         if: ${{ matrix.build-target == 'linux' }}
