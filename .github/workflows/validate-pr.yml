@@ -55,7 +55,7 @@ jobs:
       - name: Running executable on ${{ runner.os }}
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
-          xvfb-run timeout 30 ./dist/linux-unpacked/rocketchat-desktop --no-sandbox || code=$?
+          xvfb-run timeout 30 ./dist/linux-unpacked/snacka-desktop --no-sandbox || code=$?
           if [[ $code -ne 124 && $code -ne 0 ]]; then
             exit $code;
           fi
@@ -63,19 +63,19 @@ jobs:
         if: ${{ matrix.os == 'macos-latest' }}
         run: |
           brew install coreutils
-          gtimeout 30 ./dist/mac-arm64/Rocket.Chat.app/Contents/MacOS/Rocket.Chat || code=$?
+          gtimeout 30 ./dist/mac-arm64/Snacka.app/Contents/MacOS/Snacka || code=$?
           if [[ $code -ne 124 && $code -ne 0 ]]; then
             exit $code;
           fi
       - name: Running executable on ${{ runner.os }}
         if: ${{ matrix.os == 'windows-latest' }}
         run: |
-          $job = Start-Job -ScriptBlock { .\dist\win-unpacked\Rocket.Chat.exe }
+          $job = Start-Job -ScriptBlock { .\dist\win-unpacked\Snacka.exe }
           if (Wait-Job $job -Timeout 30) {
             Write-Host $(Receive-Job -Job $job)
           }
           Remove-Job -force $job
-          $job = Start-Job -ScriptBlock { .\dist\win-ia32-unpacked\Rocket.Chat.exe }
+          $job = Start-Job -ScriptBlock { .\dist\win-ia32-unpacked\Snacka.exe }
           if (Wait-Job $job -Timeout 30) {
             Write-Host $(Receive-Job -Job $job)
           }

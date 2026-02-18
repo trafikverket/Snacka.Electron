@@ -6,10 +6,10 @@ const { flipFuses, FuseVersion, FuseV1Options } = require('@electron/fuses');
 async function setupLinuxWrapper(context) {
   const { appOutDir } = context;
 
-  const binaryPath = path.join(appOutDir, 'rocketchat-desktop');
-  const binaryBinPath = path.join(appOutDir, 'rocketchat-desktop.bin');
+  const binaryPath = path.join(appOutDir, 'snacka-desktop');
+  const binaryBinPath = path.join(appOutDir, 'snacka-desktop.bin');
   const wrapperSrc = path.join(__dirname, 'linux', 'wrapper.sh');
-  const wrapperDest = path.join(appOutDir, 'rocketchat-desktop');
+  const wrapperDest = path.join(appOutDir, 'snacka-desktop');
 
   if (fs.existsSync(binaryBinPath)) {
     console.log('Wrapper already installed, skipping');
@@ -19,11 +19,11 @@ async function setupLinuxWrapper(context) {
   console.log('Setting up Linux display server wrapper...');
 
   fs.renameSync(binaryPath, binaryBinPath);
-  console.log('  Renamed binary to rocketchat-desktop.bin');
+  console.log('  Renamed binary to snacka-desktop.bin');
 
   fs.copyFileSync(wrapperSrc, wrapperDest);
   fs.chmodSync(wrapperDest, 0o755);
-  console.log('  Installed wrapper script as rocketchat-desktop');
+  console.log('  Installed wrapper script as snacka-desktop');
 
   console.log('Linux wrapper setup complete');
 }
@@ -40,13 +40,13 @@ exports.default = async function afterPack(context) {
   switch (context.electronPlatformName) {
     case 'darwin':
     case 'mas':
-      appPath = `${context.appOutDir}/Rocket.Chat.app`;
+      appPath = `${context.appOutDir}/Snacka.app`;
       break;
     case 'win32':
-      appPath = `${context.appOutDir}/Rocket.Chat.exe`;
+      appPath = `${context.appOutDir}/Snacka.exe`;
       break;
     default:
-      appPath = `${context.appOutDir}/rocketchat-desktop`;
+      appPath = `${context.appOutDir}/snacka-desktop`;
       break;
   }
 
