@@ -84,19 +84,18 @@ jobs:
           app_id: ${{ secrets.APP_ID }}
           private_key: ${{ secrets.APP_PRIVATE_KEY }}
 
-      - uses: ./workspaces/desktop-release-action
+      - name: Upload release assets
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
         with:
-          # mac_csc_link: ${{ secrets.MAC_CSC_LINK }}
-          # mac_csc_key_password: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
-          # mac_apple_id: ${{ secrets.APPLEID }}
-          # mac_apple_id_password: ${{ secrets.APPLEIDPASS }}
-          # mac_asc_provider: '6756483881'
-          github_token: ${{ steps.app-token.outputs.token }}
-        #  gcp_sa_json: ${{ secrets.GCP_SA_JSON }}
-        #  win_kms_key_resource: ${{ secrets.WIN_KMS_KEY_RESOURCE }}
-        #  win_user_crt: ${{ secrets.WIN_USER_CRT }}
-        #  win_intermediate_crt: ${{ secrets.WIN_INTERMEDIATE_CRT }}
-        #  win_root_crt: ${{ secrets.WIN_ROOT_CRT }}
-        #  snapcraft_token: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
-        #env:
-        #  SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+          files: |
+            dist/snacka-*.exe
+            dist/snacka-*.dmg
+            dist/snacka-*.pkg
+            dist/snacka-*.snap
+            dist/snacka-*.deb
+            dist/snacka-*.AppImage
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+      #env:
+      #  SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
