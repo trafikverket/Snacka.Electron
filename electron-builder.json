@@ -102,14 +102,7 @@
     "verifyUpdateCodeSignature": true,
     "requestedExecutionLevel": "asInvoker",
     "signAndEditExecutable": true,
-    "artifactName": "snacka-${version}-${os}-${arch}.${ext}",
-    "signtoolOptions": {
-      "sign": "./build/winSignKms.js",
-      "signingHashAlgorithms": [
-        "sha256"
-      ],
-      "timeStampServer": "http://timestamp.digicert.com"
-    }
+    "artifactName": "snacka-${version}-${os}-${arch}.${ext}"
   },
   "nsis": {
     "oneClick": false,

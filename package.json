@@ -7,7 +7,7 @@
   "name": "snacka",
   "description": "Desktop-klient för Snacka",
   "version": "4.12.0",
-  "author": "Trafikverket",
+  "author": "Trafikverket Team Snacka <snacka@trafikverket.se>",
   "copyright": "© 2016-2026, Rocket.Chat",
   "homepage": "https://www.trafikverket.se",
   "license": "MIT",
