@@ -7,7 +7,7 @@ type LinuxTrayIconProps = {
 };
 
 const LinuxTrayIcon = ({ badge }: LinuxTrayIconProps) => {
-  const color = '#D70000';
+  const color = '#9EA2A8';
 
   return <AppIcon color={color}>{!!badge && <Badge value={badge} />}</AppIcon>;
 };
