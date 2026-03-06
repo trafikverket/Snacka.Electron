@@ -1,19 +1,30 @@
 {
-  "files": ["app/**/*", "package.json"],
-  "extraResources": ["build/icon.ico", "servers.json"],
+  "files": [
+    "app/**/*",
+    "package.json"
+  ],
+  "extraResources": [
+    "build/icon.ico",
+    "servers.json"
+  ],
   "appId": "se.trafikverket.snacka",
   "protocols": {
     "name": "Snacka",
-    "schemes": ["snacka"]
+    "schemes": [
+      "snacka"
+    ]
   },
   "afterPack": "./build/afterPack.js",
   "mac": {
     "category": "public.app-category.productivity",
-    "target": ["dmg", "zip"],
+    "target": [
+      "dmg",
+      "zip"
+    ],
     "icon": "build/icon.icns",
-    "bundleVersion": "26013",
+    "bundleVersion": "26031",
     "helperBundleId": "se.trafikverket.snacka.helper",
-    "type": "development",
+    "type": "distribution",
     "artifactName": "snacka-${version}-${os}.${ext}",
     "mergeASARs": false,
     "extendInfo": {
@@ -48,15 +59,27 @@
     "target": [
       {
         "target": "nsis",
-        "arch": ["x64", "ia32", "arm64"]
+        "arch": [
+          "x64",
+          "ia32",
+          "arm64"
+        ]
       },
       {
         "target": "msi",
-        "arch": ["x64", "ia32", "arm64"]
+        "arch": [
+          "x64",
+          "ia32",
+          "arm64"
+        ]
       },
       {
         "target": "zip",
-        "arch": ["x64", "ia32", "arm64"]
+        "arch": [
+          "x64",
+          "ia32",
+          "arm64"
+        ]
       }
     ],
     "icon": "build/icon.ico",
@@ -89,11 +112,17 @@
   },
   "msi": {
     "warningsAsErrors": false,
-    "additionalWixArgs": ["-sval"]
+    "additionalWixArgs": [
+      "-sval"
+    ]
   },
   "appx": {
     "backgroundColor": "#2f343d",
-    "languages": ["en-US", "en-GB", "pt-BR"],
+    "languages": [
+      "en-US",
+      "en-GB",
+      "pt-BR"
+    ],
     "identityName": "Trafikverket.Snacka",
     "publisher": "CN=BBFF7141-7CAF-4FCD-8930-083FCDE6E854",
     "publisherDisplayName": "Trafikverket",
@@ -101,7 +130,12 @@
     "displayName": "Snacka"
   },
   "linux": {
-    "target": ["AppImage", "tar.gz", "deb", "rpm"],
+    "target": [
+      "AppImage",
+      "tar.gz",
+      "deb",
+      "rpm"
+    ],
     "executableName": "snacka-desktop",
     "category": "GNOME;GTK;Network;InstantMessaging",
     "desktop": {
@@ -115,8 +149,13 @@
     "artifactName": "snacka-${version}-${os}-${arch}.${ext}"
   },
   "deb": {
-    "fpm": ["--after-install=build/linux/postinst.sh"],
-    "recommends": ["xdg-desktop-portal", "xdg-desktop-portal-gtk"]
+    "fpm": [
+      "--after-install=build/linux/postinst.sh"
+    ],
+    "recommends": [
+      "xdg-desktop-portal",
+      "xdg-desktop-portal-gtk"
+    ]
   },
   "rpm": {
     "fpm": [
