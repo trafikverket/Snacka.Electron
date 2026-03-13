@@ -9,11 +9,12 @@ export const disableSpotlightIndexing = (): Promise<void> =>
   );
 
 export const packOnMacOS = (): Promise<void> =>
-  runElectronBuilder(`--mac --universal`, {
-    CSC_LINK: core.getInput('mac_csc_link'),
-    CSC_KEY_PASSWORD: core.getInput('mac_csc_key_password'),
-    FORCE_NOTARIZE: 'true',
-    APPLEID: core.getInput('mac_apple_id'),
-    APPLEIDPASS: core.getInput('mac_apple_id_password'),
-    ASC_PROVIDER: core.getInput('mac_asc_provider'),
-  });
+  runElectronBuilder(`--mac --universal`);
+  // runElectronBuilder(`--mac --universal`, {
+  //   CSC_LINK: core.getInput('mac_csc_link'),
+  //   CSC_KEY_PASSWORD: core.getInput('mac_csc_key_password'),
+  //   FORCE_NOTARIZE: 'true',
+  //   APPLEID: core.getInput('mac_apple_id'),
+  //   APPLEIDPASS: core.getInput('mac_apple_id_password'),
+  //   ASC_PROVIDER: core.getInput('mac_asc_provider'),
+  // });
