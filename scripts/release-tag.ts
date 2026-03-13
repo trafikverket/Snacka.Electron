@@ -4,7 +4,7 @@ import { parse, gt, prerelease, SemVer } from 'semver';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-const REPO_URL = 'https://github.com/RocketChat/Rocket.Chat.Electron';
+const REPO_URL = 'https://github.com/Trafikverket/Snacka.Electron';
 
 const getVersion = (): string => {
   const packageJson = JSON.parse(
