@@ -41709,7 +41709,7 @@ var external_fs_ = __nccwpck_require__(9896);
 // EXTERNAL MODULE: external "path"
 var external_path_ = __nccwpck_require__(6928);
 // EXTERNAL MODULE: ../../node_modules/@actions/core/lib/core.js
-var lib_core = __nccwpck_require__(7184);
+var core = __nccwpck_require__(7184);
 // EXTERNAL MODULE: ../../node_modules/@actions/github/lib/github.js
 var github = __nccwpck_require__(5683);
 // EXTERNAL MODULE: ../../node_modules/fast-glob/out/index.js
@@ -41728,7 +41728,7 @@ const mergeEnv = (env) => {
     }
     return Object.assign(Object.assign({}, process.env), env);
 };
-const shell_run = (command, env) => lib_core.group(`$ ${command}`, () => new Promise((resolve, reject) => {
+const run = (command, env) => core.group(`$ ${command}`, () => new Promise((resolve, reject) => {
     const p = (0,external_child_process_namespaceObject.spawn)(command, {
         env: mergeEnv(env),
         shell: true,
@@ -41759,7 +41759,7 @@ const runAndBuffer = (command, env) => new Promise((resolve, reject) => {
         reject(new Error(`process failed (exitCode=${exitCode})`));
     });
 });
-const runElectronBuilder = (args, env) => shell_run(`yarn electron-builder --publish never ${args}`, env);
+const runElectronBuilder = (args, env) => run(`yarn electron-builder --publish never ${args}`, env);
 
 ;// CONCATENATED MODULE: ./src/github.ts
 var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
@@ -41782,10 +41782,10 @@ var __asyncValues = (undefined && undefined.__asyncValues) || function (o) {
 
 
 const getRepoParams = () => ({
-    owner: lib_core.getInput('repository_owner') || github.context.repo.owner,
-    repo: lib_core.getInput('repository_name') || github.context.repo.repo,
+    owner: core.getInput('repository_owner') || github.context.repo.owner,
+    repo: core.getInput('repository_name') || github.context.repo.repo,
 });
-const octokit = github.getOctokit(lib_core.getInput('github_token'));
+const octokit = github.getOctokit(core.getInput('github_token'));
 const findRelease = (filter) => __awaiter(void 0, void 0, void 0, function* () {
     var _a, e_1, _b, _c;
     const releasesPages = octokit.paginate.iterator('GET /repos/{owner}/{repo}/releases', Object.assign({}, getRepoParams()));
@@ -41850,7 +41850,7 @@ const clearStaleAssets = (releaseId, expectedAssetNames) => __awaiter(void 0, vo
     // Delete assets that are not in the expected list (stale assets)
     for (const asset of assets) {
         if (!expectedAssetNames.includes(asset.name)) {
-            lib_core.info(`deleting stale asset ${asset.name}`);
+            core.info(`deleting stale asset ${asset.name}`);
             yield octokit.request('DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}', Object.assign(Object.assign({}, getRepoParams()), { asset_id: asset.id }));
         }
     }
@@ -41858,25 +41858,25 @@ const clearStaleAssets = (releaseId, expectedAssetNames) => __awaiter(void 0, vo
 const forceCleanOldAssets = (releaseId_1, ...args_1) => __awaiter(void 0, [releaseId_1, ...args_1], void 0, function* (releaseId, keepLatest = 100) {
     const assets = yield getReleaseAssets(releaseId);
     if (assets.length <= keepLatest) {
-        lib_core.info(`Release has ${assets.length} assets, no cleanup needed`);
+        core.info(`Release has ${assets.length} assets, no cleanup needed`);
         return;
     }
     // Sort assets by creation date (newest first) and keep the latest ones
     const sortedAssets = assets.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     const assetsToDelete = sortedAssets.slice(keepLatest);
-    lib_core.info(`Force cleaning ${assetsToDelete.length} old assets, keeping latest ${keepLatest} assets`);
+    core.info(`Force cleaning ${assetsToDelete.length} old assets, keeping latest ${keepLatest} assets`);
     for (const asset of assetsToDelete) {
-        lib_core.info(`deleting old asset ${asset.name} (created: ${asset.created_at})`);
+        core.info(`deleting old asset ${asset.name} (created: ${asset.created_at})`);
         yield octokit.request('DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}', Object.assign(Object.assign({}, getRepoParams()), { asset_id: asset.id }));
     }
 });
 const overrideAsset = (release, assets, name, size, data) => __awaiter(void 0, void 0, void 0, function* () {
     const asset = assets.find((asset) => asset.name === name);
     if (asset) {
-        lib_core.info(`deleting existing asset ${name}`);
+        core.info(`deleting existing asset ${name}`);
         yield octokit.request('DELETE /repos/{owner}/{repo}/releases/assets/{asset_id}', Object.assign(Object.assign({}, getRepoParams()), { asset_id: asset.id }));
     }
-    lib_core.info(`uploading asset ${name}`);
+    core.info(`uploading asset ${name}`);
     yield octokit.request({
         method: 'POST',
         url: release.upload_url,
@@ -41891,33 +41891,13 @@ const overrideAsset = (release, assets, name, size, data) => __awaiter(void 0, v
 });
 
 ;// CONCATENATED MODULE: ./src/linux.ts
-var linux_awaiter = (undefined && undefined.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 
-
-const setupSnapcraft = () => core.group('Setup Snapcraft', () => linux_awaiter(void 0, void 0, void 0, function* () {
-    yield run(`sudo snap install snapcraft --classic --channel stable`);
-}));
-const packOnLinux = () => runElectronBuilder(`--linux tar.gz deb rpm snap AppImage`);
-const snapChannels = ['edge', 'beta', 'candidate', 'stable'];
-const uploadSnap = (snapFilePath, level) => linux_awaiter(void 0, void 0, void 0, function* () {
-    const channels = snapChannels.slice(0, snapChannels.indexOf(level) + 1);
-    for (const channel of channels) {
-        yield lib_core.group(`uploading ${snapFilePath} to Snapcraft in channel ${channel}`, () => shell_run(`snapcraft upload --release=${channel} "${snapFilePath}"`));
-    }
-});
+const packOnLinux = () => runElectronBuilder(`--linux tar.gz deb rpm AppImage`);
 
 ;// CONCATENATED MODULE: ./src/macos.ts
 
 
-const disableSpotlightIndexing = () => lib_core.group('Disable Spotlight indexing (to avoid errors of DMG generation)', () => shell_run(`sudo mdutil -a -i off`));
+const disableSpotlightIndexing = () => core.group('Disable Spotlight indexing (to avoid errors of DMG generation)', () => run(`sudo mdutil -a -i off`));
 const packOnMacOS = () => runElectronBuilder(`--mac --universal`);
 // runElectronBuilder(`--mac --universal`, {
 //   CSC_LINK: core.getInput('mac_csc_link'),
@@ -41964,12 +41944,12 @@ const packOnWindows = () => windows_awaiter(void 0, void 0, void 0, function* ()
         // process.env.WIN_CERT_FILE = userCertPath;
         // process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
         // process.env.GCLOUD_PATH = gcloudPath;
-        lib_core.info('Building Windows packages (unsigned, internal use)...');
+        core.info('Building Windows packages (unsigned, internal use)...');
         // Bygg utan signeringsmiljö
         yield runElectronBuilder(`--x64 --ia32 --arm64 --win nsis`);
         yield runElectronBuilder(`--x64 --ia32 --arm64 --win msi`);
         yield runElectronBuilder(`--x64 --ia32 --arm64 --win appx`);
-        lib_core.info('✅ All Windows packages built (unsigned)');
+        core.info('✅ All Windows packages built (unsigned)');
         // const distPath = path.resolve(process.cwd(), 'dist');
         // core.info('Verifying executable signatures...');
         // await verifyExecutableSignature(distPath);
@@ -41984,7 +41964,7 @@ const packOnWindows = () => windows_awaiter(void 0, void 0, void 0, function* ()
         // core.info('✅ Windows packages built, signed, and verified successfully');
     }
     catch (error) {
-        lib_core.error(`Failed to build Windows packages: ${error}`);
+        core.error(`Failed to build Windows packages: ${error}`);
         throw error;
     }
 });
@@ -42027,7 +42007,6 @@ const pack = () => src_awaiter(void 0, void 0, void 0, function* () {
 const getFilesToUpload = () => out_default()([
     'dist/latest-linux.yml',
     'dist/*.tar.gz',
-    'dist/*.snap',
     'dist/*.deb',
     'dist/*.rpm',
     'dist/latest-mac.yml',
@@ -42055,7 +42034,7 @@ const releaseDevelopment = (commitSha) => src_awaiter(void 0, void 0, void 0, fu
     const existingAssets = yield getReleaseAssets(release.id);
     // Force clean old assets if we have too many (close to GitHub's 1000 limit)
     if (existingAssets.length > 900) {
-        lib_core.info(`Release has ${existingAssets.length} assets, cleaning old assets to prevent GitHub limit`);
+        core.info(`Release has ${existingAssets.length} assets, cleaning old assets to prevent GitHub limit`);
         yield forceCleanOldAssets(release.id, 100);
     }
     else {
@@ -42066,13 +42045,9 @@ const releaseDevelopment = (commitSha) => src_awaiter(void 0, void 0, void 0, fu
     const assets = yield getReleaseAssets(release.id);
     for (const path of yield getFilesToUpload()) {
         const name = (0,external_path_.basename)(path);
-        const extension = (0,external_path_.extname)(path).toLowerCase();
         const { size } = yield external_fs_.promises.stat(path);
         const data = yield external_fs_.promises.readFile(path);
         yield overrideAsset(release, assets, name, size, data);
-        if (extension === '.snap') {
-            yield uploadSnap(path, 'edge');
-        }
     }
 });
 const releaseSnapshot = (commitSha) => src_awaiter(void 0, void 0, void 0, function* () {
@@ -42081,7 +42056,7 @@ const releaseSnapshot = (commitSha) => src_awaiter(void 0, void 0, void 0, funct
     const existingAssets = yield getReleaseAssets(release.id);
     // Force clean old assets if we have too many (close to GitHub's 1000 limit)
     if (existingAssets.length > 900) {
-        lib_core.info(`Release has ${existingAssets.length} assets, cleaning old assets to prevent GitHub limit`);
+        core.info(`Release has ${existingAssets.length} assets, cleaning old assets to prevent GitHub limit`);
         yield forceCleanOldAssets(release.id, 100);
     }
     else {
@@ -42092,13 +42067,9 @@ const releaseSnapshot = (commitSha) => src_awaiter(void 0, void 0, void 0, funct
     const assets = yield getReleaseAssets(release.id);
     for (const path of yield getFilesToUpload()) {
         const name = (0,external_path_.basename)(path);
-        const extension = (0,external_path_.extname)(path).toLowerCase();
         const { size } = yield external_fs_.promises.stat(path);
         const data = yield external_fs_.promises.readFile(path);
         yield overrideAsset(release, assets, name, size, data);
-        if (extension === '.snap') {
-            yield uploadSnap(path, 'edge');
-        }
     }
 });
 const releaseTagged = (version, commitSha) => src_awaiter(void 0, void 0, void 0, function* () {
@@ -42110,32 +42081,25 @@ const releaseTagged = (version, commitSha) => src_awaiter(void 0, void 0, void 0
     const assets = yield getReleaseAssets(release.id);
     for (const path of yield getFilesToUpload()) {
         const name = (0,external_path_.basename)(path);
-        const extension = (0,external_path_.extname)(path).toLowerCase();
         const { size } = yield external_fs_.promises.stat(path);
         const data = yield external_fs_.promises.readFile(path);
         yield overrideAsset(release, assets, name, size, data);
-        if (extension === '.snap') {
-            yield uploadSnap(path, (!version.prerelease && 'stable') ||
-                (version.prerelease[0] === 'candidate' && 'candidate') ||
-                (version.prerelease[0] === 'beta' && 'beta') ||
-                'edge');
-        }
     }
 });
 const start = () => src_awaiter(void 0, void 0, void 0, function* () {
     if (github.context.eventName !== 'push') {
-        lib_core.warning(`this action should be used in push events (eventName="${github.context.eventName}")`);
+        core.warning(`this action should be used in push events (eventName="${github.context.eventName}")`);
         return;
     }
     const payload = github.context.payload;
-    const ref = lib_core.getInput('ref') || payload.ref;
+    const ref = core.getInput('ref') || payload.ref;
     if (ref === 'refs/heads/dev') {
-        lib_core.info(`push event on dev branch detected, performing development release`);
+        core.info(`push event on dev branch detected, performing development release`);
         yield releaseDevelopment(payload.after);
         return;
     }
     if (ref === 'refs/heads/master') {
-        lib_core.info(`push event on master branch detected, performing snapshot release`);
+        core.info(`push event on master branch detected, performing snapshot release`);
         yield releaseSnapshot(payload.after);
         return;
     }
@@ -42143,18 +42107,18 @@ const start = () => src_awaiter(void 0, void 0, void 0, function* () {
         const tag = ref.slice('refs/tags/'.length);
         const version = (0,semver.parse)(tag);
         if (version) {
-            lib_core.info(`push event with tag detected (tag="${version.version}"), performing tagged release`);
+            core.info(`push event with tag detected (tag="${version.version}"), performing tagged release`);
             yield releaseTagged(version, payload.after);
             return;
         }
-        lib_core.info(`push event with non-semantic tag detected (tag="${tag}"), performing snapshot release`);
+        core.info(`push event with non-semantic tag detected (tag="${tag}"), performing snapshot release`);
         yield releaseSnapshot(payload.after);
         return;
     }
-    lib_core.warning(`push event without relevant ref (ref="${ref}"), skipping release`);
+    core.warning(`push event without relevant ref (ref="${ref}"), skipping release`);
 });
 start().catch((error) => {
-    lib_core.setFailed(error === null || error === void 0 ? void 0 : error.message);
+    core.setFailed(error === null || error === void 0 ? void 0 : error.message);
 });
 
 })();

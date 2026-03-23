@@ -1,5 +1,5 @@
 import { promises } from 'fs';
-import { basename, extname } from 'path';
+import { basename } from 'path';
 
 import * as core from '@actions/core';
 import * as github from '@actions/github';
@@ -17,7 +17,7 @@ import {
   getTaggedRelease,
   overrideAsset,
 } from './github';
-import { packOnLinux, uploadSnap } from './linux';
+import { packOnLinux } from './linux';
 import { disableSpotlightIndexing, packOnMacOS } from './macos';
 import { packOnWindows } from './windows/index';
 
@@ -43,7 +43,6 @@ const getFilesToUpload = () =>
   fg([
     'dist/latest-linux.yml',
     'dist/*.tar.gz',
-    'dist/*.snap',
     'dist/*.deb',
     'dist/*.rpm',
     'dist/latest-mac.yml',
@@ -88,14 +87,10 @@ const releaseDevelopment = async (commitSha: string) => {
 
   for (const path of await getFilesToUpload()) {
     const name = basename(path);
-    const extension = extname(path).toLowerCase();
     const { size } = await promises.stat(path);
     const data = await promises.readFile(path);
 
     await overrideAsset(release, assets, name, size, data);
-    if (extension === '.snap') {
-      await uploadSnap(path, 'edge');
-    }
   }
 };
 
@@ -121,14 +116,10 @@ const releaseSnapshot = async (commitSha: string) => {
 
   for (const path of await getFilesToUpload()) {
     const name = basename(path);
-    const extension = extname(path).toLowerCase();
     const { size } = await promises.stat(path);
     const data = await promises.readFile(path);
 
     await overrideAsset(release, assets, name, size, data);
-    if (extension === '.snap') {
-      await uploadSnap(path, 'edge');
-    }
   }
 };
 
@@ -145,20 +136,10 @@ const releaseTagged = async (version: SemVer, commitSha: string) => {
 
   for (const path of await getFilesToUpload()) {
     const name = basename(path);
-    const extension = extname(path).toLowerCase();
     const { size } = await promises.stat(path);
     const data = await promises.readFile(path);
 
     await overrideAsset(release, assets, name, size, data);
-    if (extension === '.snap') {
-      await uploadSnap(
-        path,
-        (!version.prerelease && 'stable') ||
-          (version.prerelease[0] === 'candidate' && 'candidate') ||
-          (version.prerelease[0] === 'beta' && 'beta') ||
-          'edge'
-      );
-    }
   }
 };
 

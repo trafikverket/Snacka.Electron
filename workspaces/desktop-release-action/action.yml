@@ -53,9 +53,6 @@ inputs:
   github_token:
     description: 'The GitHub token to publish releases'
     required: true
-  snapcraft_token:
-    description: 'The Snapcraft token to publish releases'
-    required: false
 
 runs:
   using: 'node12'
