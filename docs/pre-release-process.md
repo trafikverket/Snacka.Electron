@@ -109,8 +109,8 @@ The setting is persisted automatically and survives app restarts.
 
 Create `update.json` in the user data directory:
 
-| Platform | Location                                                |
-| -------- | ------------------------------------------------------- |
+| Platform | Location                                           |
+| -------- | -------------------------------------------------- |
 | Windows  | `%APPDATA%\Snacka\update.json`                     |
 | macOS    | `~/Library/Application Support/Snacka/update.json` |
 | Linux    | `~/.config/Snacka/update.json`                     |

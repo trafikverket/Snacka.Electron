@@ -26,8 +26,8 @@ export const signBuiltPackages = async (distPath: string): Promise<void> => {
   // Find all packages to sign
   // Note: AppX files are for Microsoft Store and don't need code signing
   const patterns = [
-    '*.exe',      // NSIS installers
-    '*.msi',      // MSI installers
+    '*.exe', // NSIS installers
+    '*.msi', // MSI installers
   ];
 
   const filesToSign: string[] = [];
@@ -36,7 +36,13 @@ export const signBuiltPackages = async (distPath: string): Promise<void> => {
     const files = glob.sync(pattern, {
       cwd: distPath,
       absolute: true,
-      ignore: ['**/node_modules/**', '**/temp/**', '**/win-unpacked/**', '**/win-ia32-unpacked/**', '**/win-arm64-unpacked/**']
+      ignore: [
+        '**/node_modules/**',
+        '**/temp/**',
+        '**/win-unpacked/**',
+        '**/win-ia32-unpacked/**',
+        '**/win-arm64-unpacked/**',
+      ],
     });
     filesToSign.push(...files);
   }
@@ -49,7 +55,9 @@ export const signBuiltPackages = async (distPath: string): Promise<void> => {
   if (uniqueFiles.length === 0) {
     core.error(`No packages found to sign in ${distPath}`);
     core.error(`Current working directory: ${process.cwd()}`);
-    throw new Error(`No Windows packages found to sign. Expected .exe, .msi, or .appx files in ${distPath}`);
+    throw new Error(
+      `No Windows packages found to sign. Expected .exe, .msi, or .appx files in ${distPath}`
+    );
   }
 
   // Sign each file using the existing winSignKms.js script
@@ -85,10 +93,11 @@ export const signBuiltPackages = async (distPath: string): Promise<void> => {
             ...process.env,
             WIN_KMS_KEY_RESOURCE: kmsKeyResource,
             WIN_CERT_FILE: certFile,
-            GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+            GOOGLE_APPLICATION_CREDENTIALS:
+              process.env.GOOGLE_APPLICATION_CREDENTIALS,
             CLOUDSDK_PYTHON: process.env.CLOUDSDK_PYTHON,
           },
-          maxBuffer: 10 * 1024 * 1024 // 10MB buffer for output
+          maxBuffer: 10 * 1024 * 1024, // 10MB buffer for output
         }
       );
 
@@ -119,7 +128,7 @@ export const signPackageType = async (
 
   const files = glob.sync(pattern, {
     cwd: distPath,
-    absolute: true
+    absolute: true,
   });
 
   if (files.length === 0) {
