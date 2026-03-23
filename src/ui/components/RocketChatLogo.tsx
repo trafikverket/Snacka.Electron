@@ -45,6 +45,6 @@ export const RocketChatLogo = () => {
           />
         </g>
       </g>
-  </svg>
+    </svg>
   );
 };
