@@ -9,7 +9,10 @@ export const setTitle = (title: string): void => {
 
   const url = getServerUrl();
 
-  if (title === 'Snacka' && new URL(url).host !== 'snacka.app.trafikverket.se') {
+  if (
+    title === 'Snacka' &&
+    new URL(url).host !== 'snacka.app.trafikverket.se'
+  ) {
     dispatch({
       type: WEBVIEW_TITLE_CHANGED,
       payload: {
