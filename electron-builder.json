@@ -9,11 +9,11 @@
   "afterPack": "./build/afterPack.js",
   "mac": {
     "category": "public.app-category.productivity",
-    "target": ["dmg", "pkg", "zip", "mas"],
+    "target": ["dmg", "zip"],
     "icon": "build/icon.icns",
     "bundleVersion": "26013",
     "helperBundleId": "se.trafikverket.snacka.helper",
-    "type": "distribution",
+    "type": "development",
     "artifactName": "snacka-${version}-${os}.${ext}",
     "mergeASARs": false,
     "extendInfo": {
@@ -21,11 +21,8 @@
       "NSCameraUsageDescription": "I need access to your camera to record the video you want to send.",
       "NSScreenCaptureDescription": "I need access to your screen to share it through video calls when you want to."
     },
-    "hardenedRuntime": true,
-    "gatekeeperAssess": false,
-    "provisioningProfile": "Desktop.provisionprofile",
-    "entitlements": "build/entitlements.mac.plist",
-    "entitlementsInherit": "build/entitlements.mac.plist"
+    "hardenedRuntime": false,
+    "gatekeeperAssess": false
   },
   "dmg": {
     "background": "build/background.png",
@@ -46,14 +43,6 @@
   "pkg": {
     "isRelocatable": false,
     "overwriteAction": "upgrade"
-  },
-  "mas": {
-    "entitlements": "build/entitlements.mas.plist",
-    "entitlementsInherit": "build/entitlements.mas.inherit.plist",
-    "entitlementsLoginHelper": "build/entitlements.mas.inherit.plist",
-    "hardenedRuntime": false,
-    "asarUnpack": ["node_modules"],
-    "artifactName": "snacka-${version}-mas.${ext}"
   },
   "win": {
     "target": [
@@ -112,7 +101,7 @@
     "displayName": "Snacka"
   },
   "linux": {
-    "target": ["AppImage", "tar.gz", "deb", "rpm", "snap", "flatpak"],
+    "target": ["AppImage", "tar.gz", "deb", "rpm"],
     "executableName": "snacka-desktop",
     "category": "GNOME;GTK;Network;InstantMessaging",
     "desktop": {
@@ -159,7 +148,6 @@
       "pipewire"
     ]
   },
-  "afterSign": "./build/notarize.js",
   "generateUpdatesFilesForAllChannels": true,
   "publish": [
     {
