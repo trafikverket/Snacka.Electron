@@ -58,13 +58,13 @@ function checkAvailableTools() {
       'C:\\Program Files\\Google\\Cloud SDK\\google-cloud-sdk\\bin\\gcloud.cmd';
     const gcloudWingetPath2 = process.env.LOCALAPPDATA
       ? path.join(
-        process.env.LOCALAPPDATA,
-        'Google',
-        'Cloud SDK',
-        'google-cloud-sdk',
-        'bin',
-        'gcloud.cmd'
-      )
+          process.env.LOCALAPPDATA,
+          'Google',
+          'Cloud SDK',
+          'google-cloud-sdk',
+          'bin',
+          'gcloud.cmd'
+        )
       : null;
 
     const jsignAvailable = fs.existsSync(jsignChocolateyPath);
