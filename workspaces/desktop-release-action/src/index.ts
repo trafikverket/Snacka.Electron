@@ -17,7 +17,7 @@ import {
   getTaggedRelease,
   overrideAsset,
 } from './github';
-import { packOnLinux, setupSnapcraft, uploadSnap } from './linux';
+import { packOnLinux, uploadSnap } from './linux';
 import { disableSpotlightIndexing, packOnMacOS } from './macos';
 import { packOnWindows } from './windows/index';
 
