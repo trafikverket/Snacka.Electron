@@ -1,5 +1,5 @@
 import { promises } from 'fs';
-import { basename, extname } from 'path';
+import { basename } from 'path';
 
 import * as core from '@actions/core';
 import * as github from '@actions/github';
@@ -17,7 +17,7 @@ import {
   getTaggedRelease,
   overrideAsset,
 } from './github';
-import { packOnLinux, setupSnapcraft, uploadSnap } from './linux';
+import { packOnLinux } from './linux';
 import { disableSpotlightIndexing, packOnMacOS } from './macos';
 import { packOnWindows } from './windows/index';
 
@@ -43,15 +43,12 @@ const getFilesToUpload = () =>
   fg([
     'dist/latest-linux.yml',
     'dist/*.tar.gz',
-    'dist/*.snap',
     'dist/*.deb',
     'dist/*.rpm',
     'dist/latest-mac.yml',
-    'dist/*.pkg',
     'dist/*.zip',
     'dist/*.dmg',
     'dist/*.dmg.blockmap',
-    'dist/mas-universal/*.pkg',
     'dist/latest.yml',
     'dist/*.appx',
     'dist/*.msi',
@@ -74,11 +71,13 @@ const releaseDevelopment = async (commitSha: string) => {
 
   // Force clean old assets if we have too many (close to GitHub's 1000 limit)
   if (existingAssets.length > 900) {
-    core.info(`Release has ${existingAssets.length} assets, cleaning old assets to prevent GitHub limit`);
+    core.info(
+      `Release has ${existingAssets.length} assets, cleaning old assets to prevent GitHub limit`
+    );
     await forceCleanOldAssets(release.id, 100);
   } else {
     const filesToUpload = await getFilesToUpload();
-    const expectedAssetNames = filesToUpload.map(path => basename(path));
+    const expectedAssetNames = filesToUpload.map((path) => basename(path));
     await clearStaleAssets(release.id, expectedAssetNames);
   }
 
@@ -86,14 +85,10 @@ const releaseDevelopment = async (commitSha: string) => {
 
   for (const path of await getFilesToUpload()) {
     const name = basename(path);
-    const extension = extname(path).toLowerCase();
     const { size } = await promises.stat(path);
     const data = await promises.readFile(path);
 
     await overrideAsset(release, assets, name, size, data);
-    if (extension === '.snap') {
-      await uploadSnap(path, 'edge');
-    }
   }
 };
 
@@ -105,11 +100,13 @@ const releaseSnapshot = async (commitSha: string) => {
 
   // Force clean old assets if we have too many (close to GitHub's 1000 limit)
   if (existingAssets.length > 900) {
-    core.info(`Release has ${existingAssets.length} assets, cleaning old assets to prevent GitHub limit`);
+    core.info(
+      `Release has ${existingAssets.length} assets, cleaning old assets to prevent GitHub limit`
+    );
     await forceCleanOldAssets(release.id, 100);
   } else {
     const filesToUpload = await getFilesToUpload();
-    const expectedAssetNames = filesToUpload.map(path => basename(path));
+    const expectedAssetNames = filesToUpload.map((path) => basename(path));
     await clearStaleAssets(release.id, expectedAssetNames);
   }
 
@@ -117,14 +114,10 @@ const releaseSnapshot = async (commitSha: string) => {
 
   for (const path of await getFilesToUpload()) {
     const name = basename(path);
-    const extension = extname(path).toLowerCase();
     const { size } = await promises.stat(path);
     const data = await promises.readFile(path);
 
     await overrideAsset(release, assets, name, size, data);
-    if (extension === '.snap') {
-      await uploadSnap(path, 'edge');
-    }
   }
 };
 
@@ -141,20 +134,10 @@ const releaseTagged = async (version: SemVer, commitSha: string) => {
 
   for (const path of await getFilesToUpload()) {
     const name = basename(path);
-    const extension = extname(path).toLowerCase();
     const { size } = await promises.stat(path);
     const data = await promises.readFile(path);
 
     await overrideAsset(release, assets, name, size, data);
-    if (extension === '.snap') {
-      await uploadSnap(
-        path,
-        (!version.prerelease && 'stable') ||
-          (version.prerelease[0] === 'candidate' && 'candidate') ||
-          (version.prerelease[0] === 'beta' && 'beta') ||
-          'edge'
-      );
-    }
   }
 };
 
@@ -184,7 +167,6 @@ const start = async () => {
     await releaseSnapshot(payload.after);
     return;
   }
-
 
   if (ref.match(/^refs\/tags\//)) {
     const tag = ref.slice('refs/tags/'.length);

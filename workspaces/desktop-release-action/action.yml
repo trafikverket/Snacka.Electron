@@ -13,25 +13,25 @@ inputs:
     required: false
   mac_csc_link:
     description: 'The base64-encoded data of certificates (*.p12) for code signing for macOS'
-    required: true
+    required: false
   mac_csc_key_password:
     description: 'The password to decrypt the certificates for code signing for macOS'
-    required: true
+    required: false
   mac_apple_id:
     description: 'The Apple ID for notarization'
-    required: true
+    required: false
   mac_apple_id_password:
     description: 'The password associated to Apple ID for notarization'
-    required: true
+    required: false
   mac_asc_provider:
     description: 'The membership account associated with the Apple Developer account'
-    required: true
+    required: false
   gcp_sa_json:
     description: 'Google Cloud service account JSON for KMS authentication'
-    required: true
+    required: false
   win_kms_key_resource:
     description: 'Google Cloud KMS key resource (projects/.../locations/.../keyRings/.../cryptoKeys/.../cryptoKeyVersions/N)'
-    required: true
+    required: false
   win_kms_cert_sha1:
     description: 'SHA1 thumbprint of the issued code signing certificate (optional if win_user_crt provided)'
     required: false
@@ -52,9 +52,6 @@ inputs:
     required: false
   github_token:
     description: 'The GitHub token to publish releases'
-    required: true
-  snapcraft_token:
-    description: 'The Snapcraft token to publish releases'
     required: true
 
 runs:
