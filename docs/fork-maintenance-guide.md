@@ -51,11 +51,13 @@ upstream-main        ← Tracking branch för officiell Rocket.Chat.Electron
 
 **Branch-regler:**
 - `main`: Alltid stabilt, innehåller endast released versioner
-- `upstream-main`: Speglar officiell repots main - uppdateras regelbundet
+- `upstream-main`: Lokal tracking-branch för upstreams default branch (`github/master`)
 - `features/*`: Feature-utveckling från main
 - `bugfix/*`: Bugfixes från main
 
 I detta repo pekar remote `github` på Rocket.Chat.Electrons default branch `master`, men vi använder ändå det lokala namnet `upstream-main` för tracking-branchen.
+
+För releasearbete bör ni normalt utgå från en officiell upstream-tag eller en upstream release-branch. `github/master` är främst användbar som löpande referens när ni vill se vad som har förändrats uppströms.
 
 ---
 
@@ -80,17 +82,17 @@ Dokumentera alla ändringar för enklare merge-hantering:
 
 Använd git worktrees för att undvika att störa din nuvarande arbetsträd:
 
-```bash
+```powershell
 # Skapa en worktree för uppdateringen
-mkdir -p ../Snacka.Electron-upstream-sync
+New-Item -ItemType Directory -Force -Path ..\Snacka.Electron-upstream-sync | Out-Null
 git worktree add ../Snacka.Electron-upstream-sync -b upstream-sync-work main
-cd ../Snacka.Electron-upstream-sync
+Set-Location ..\Snacka.Electron-upstream-sync
 yarn install
 ```
 
 ### Steg 2: Hämta senaste uppdateringar från officiell repo
 
-```bash
+```powershell
 # Från den nya worktreen
 git fetch github
 ```
@@ -99,40 +101,49 @@ git fetch github
 
 Välj vilken version du vill uppdatera till:
 
-```bash
+```powershell
 # Lista tillgängliga tags från officiell repo
-git tag -l | grep "^v" | sort -V | tail -20
+git ls-remote --tags github
 
-# Eller lista branches
-git branch -r | grep "github/"
+# Lista relevanta upstream-branches
+git branch -r
 ```
 
-Exempel: uppdatera till version `v3.5.0` från officiell repo.
+Rekommendation:
+- Välj i första hand en officiell tag, till exempel `v4.13.0`
+- Om upstream underhåller en release-branch för versionen, kan ni istället utgå från den, till exempel `github/release/4.11.x`
 
 ### Steg 4: Uppdatera upstream-main branch
 
-```bash
-# Skapa/uppdatera upstream-main branch
-git checkout upstream-main 2>/dev/null || git checkout -b upstream-main github/master
+```powershell
+# Uppdatera lokal tracking-branch för upstreams default branch
+git checkout upstream-main
+# Om branchen inte finns ännu:
+git checkout -b upstream-main github/master
 
-# Eller om du vill specifik tag:
-git checkout -b upstream-v3.5.0 github/v3.5.0
+# Rekommenderat för en release-uppdatering: skapa en temporär branch från vald tag
+git checkout -b upstream-v4.13.0 tags/v4.13.0
+
+# Alternativt från upstreams release-branch när en sådan finns
+git checkout -b upstream-release-4.11.x github/release/4.11.x
 ```
 
 ### Steg 5: Merge till main med Snacka-ändringar
 
-```bash
+```powershell
 # Gå tillbaka till main
 git checkout main
 
-# Merge uppdateringarna
-git merge upstream-main --no-ff -m "Merge upstream Rocket.Chat.Electron main"
+# Merge uppdateringarna från vald upstream-källa
+git merge upstream-v4.13.0 --no-ff -m "Merge upstream Rocket.Chat.Electron v4.13.0"
 ```
+
+Om ni utgår från en temporär branch skapad från tag eller release-branch, merge:ar ni den istället för `upstream-main`.
 
 **Om det blir merge-konflikter:**
 
 1. **Identifiera konflikter:**
-   ```bash
+   ```powershell
    git status
    ```
 
@@ -150,7 +161,7 @@ git merge upstream-main --no-ff -m "Merge upstream Rocket.Chat.Electron main"
    - `src/urls.ts` - Behåll Snacka-URLs
 
 4. **Résolution-strategi:**
-   ```bash
+   ```powershell
    # Om du vet vilken part du vill ha:
    git checkout --ours package.json      # Behåll er version
    git checkout --theirs src/main.ts     # Behåll upstream version
@@ -162,12 +173,12 @@ git merge upstream-main --no-ff -m "Merge upstream Rocket.Chat.Electron main"
 
 ### Steg 6: Validera och testa
 
-```bash
+```powershell
 # Installera dependencies (kan behöva ominstalleras efter merge)
 yarn install
 
 # Verifiera att inga Snacka-ändringar råkades tas bort
-git diff upstream-main -- package.json | grep -E "productName|Snacka|trafikverket"
+git diff upstream-main -- package.json | Select-String -Pattern "productName|Snacka|trafikverket"
 
 # Kör lint
 yarn lint
@@ -183,7 +194,7 @@ yarn build
 
 Snacka.Electron följer alltid samma versionsnummer som Rocket.Chat.Electron:
 
-```bash
+```powershell
 # Format: v{ROCKET.CHAT.VERSION}
 # Exempel: v4.13.0 från Rocket.Chat → v4.13.0 i Snacka
 
@@ -202,9 +213,9 @@ git push origin main --tags
 
 ### Steg 9: Rensa worktree
 
-```bash
+```powershell
 # Från huvudkatalogen
-cd ../Snacka.Electron
+Set-Location ..\Snacka.Electron
 
 # Ta bort worktree
 git worktree remove ../Snacka.Electron-upstream-sync
@@ -219,7 +230,7 @@ git worktree remove ../Snacka.Electron-upstream-sync
 **Orsak:** `yarn.lock` eller `package-lock.json` har divergerat.
 
 **Solution:**
-```bash
+```powershell
 # Lös genom att använda er version och installera om
 git checkout --ours yarn.lock
 yarn install
@@ -236,9 +247,9 @@ git add yarn.lock
 - Kolla ikoner och assets
 
 **Recovery:**
-```bash
+```powershell
 # Återskapa från tidigare commit
-git log --oneline | grep -i branding
+git log --oneline | Select-String -Pattern "branding"
 git checkout <earlier-commit> -- build/icons/ src/public/
 ```
 
@@ -254,22 +265,22 @@ git checkout <earlier-commit> -- build/icons/ src/public/
 
 ## Exempel-Scenario: Uppdatera från 4.11.0 till 4.13.0
 
-```bash
+```powershell
 # 1. Förbered
-mkdir -p ../Snacka.Electron-upstream-sync
+New-Item -ItemType Directory -Force -Path ..\Snacka.Electron-upstream-sync | Out-Null
 git worktree add ../Snacka.Electron-upstream-sync -b sync-4.13.0 main
-cd ../Snacka.Electron-upstream-sync
+Set-Location ..\Snacka.Electron-upstream-sync
 yarn install
 
 # 2. Hämta uppdateringar
 git fetch github
 
-# 3. Uppdatera upstream-main
-git checkout upstream-main 2>/dev/null || git checkout -b upstream-main github/master
+# 3. Skapa en temporär upstream-branch från vald releasekälla
+git checkout -b upstream-v4.13.0 tags/v4.13.0
 
 # 4. Gå till main och merge
 git checkout main
-git merge upstream-main --no-ff -m "Update to Rocket.Chat.Electron upstream"
+git merge upstream-v4.13.0 --no-ff -m "Update to Rocket.Chat.Electron v4.13.0"
 
 # 5. Lös konflikter (visa bara package.json som exempel)
 # >> CONFLICT i package.json
@@ -289,7 +300,7 @@ git tag -a v4.13.0 -m "Snacka release based on Rocket.Chat.Electron v4.13.0"
 git push origin main --tags
 
 # 9. Rensa
-cd ../Snacka.Electron
+Set-Location ..\Snacka.Electron
 git worktree remove ../Snacka.Electron-upstream-sync
 ```
 
@@ -301,7 +312,7 @@ Ditt förslag fungerar, men här är några förbättringar:
 
 ### Förslag 1: Upprätthål en tracking-branch
 - **Din approach:** Tagga direkt från officiell repo till main
-- **Förbättring:** Upprätthål en dedikerad `upstream-main` branch som trackar officiell repo
+- **Förbättring:** Upprätthål en dedikerad `upstream-main` branch som trackar `github/master`, men gör själva releaseuppdateringen från upstream-tag eller release-branch
 - **Fördelar:** Enklare att se diff mellan versioner, hantera rollback, verifiera ändringar före merge
 
 ### Förslag 2: Versionering
@@ -318,16 +329,21 @@ Ditt förslag fungerar, men här är några förbättringar:
 
 ## Snabb Referens - Uppdateringskommandoer
 
-```bash
+```powershell
 # Hämta senaste från officiell repo
 git fetch github
 
 # Uppdatera upstream-tracking branch
-git checkout upstream-main || git checkout -b upstream-main github/master
+git checkout upstream-main
+# Om branchen inte finns ännu:
+git checkout -b upstream-main github/master
+
+# Skapa release-branch från vald upstream-tag
+git checkout -b upstream-v4.13.0 tags/v4.13.0
 
 # Merge till main
 git checkout main
-git merge upstream-main --no-ff
+git merge upstream-v4.13.0 --no-ff
 
 # Lös konflikter (om några)
 # [edit files]

@@ -41,11 +41,14 @@ See **[Fork Maintenance Guide](docs/fork-maintenance-guide.md)** for complete st
 - Testing and validation
 
 **TL;DR:**
-```bash
+```powershell
 git fetch github
-git checkout upstream-main || git checkout -b upstream-main github/master
+git checkout upstream-main
+# if the branch does not exist yet
+git checkout -b upstream-main github/master
+git checkout -b upstream-v4.13.0 tags/v4.13.0
 git checkout main
-git merge upstream-main --no-ff
+git merge upstream-v4.13.0 --no-ff
 # Resolve conflicts (keep Snacka customizations)
 git tag -a v4.13.0 -m "Snacka release based on Rocket.Chat v4.13.0"
 git push origin main --tags
