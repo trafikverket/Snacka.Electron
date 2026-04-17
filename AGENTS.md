@@ -37,7 +37,7 @@ yarn electron-builder --x64 --ia32 --arm64 --win nsis
 See **[Fork Maintenance Guide](docs/fork-maintenance-guide.md)** for complete step-by-step instructions on:
 - Syncing with upstream versions
 - Handling merge conflicts while preserving Snacka customizations
-- Version tagging strategy (follow upstream: `v4.13.0`)
+- Version tagging strategy (follow upstream: `4.13.0`)
 - Testing and validation
 
 **TL;DR:**
@@ -46,11 +46,11 @@ git fetch github
 git checkout upstream-main
 # if the branch does not exist yet
 git checkout -b upstream-main github/master
-git checkout -b upstream-v4.13.0 tags/v4.13.0
+git checkout -b upstream-4.13.0 tags/4.13.0
 git checkout main
-git merge upstream-v4.13.0 --no-ff
+git merge upstream-4.13.0 --no-ff
 # Resolve conflicts (keep Snacka customizations)
-git tag -a v4.13.0 -m "Snacka release based on Rocket.Chat v4.13.0"
+git tag -a 4.13.0 -m "Snacka release based on Rocket.Chat 4.13.0"
 git push origin main --tags
 ```
 

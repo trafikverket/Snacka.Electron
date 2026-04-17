@@ -110,7 +110,7 @@ git branch -r
 ```
 
 Rekommendation:
-- Välj i första hand en officiell tag, till exempel `v4.13.0`
+- Välj i första hand en officiell tag, till exempel `4.13.0`
 - Om upstream underhåller en release-branch för versionen, kan ni istället utgå från den, till exempel `github/release/4.11.x`
 
 ### Steg 4: Uppdatera upstream-main branch
@@ -122,7 +122,7 @@ git checkout upstream-main
 git checkout -b upstream-main github/master
 
 # Rekommenderat för en release-uppdatering: skapa en temporär branch från vald tag
-git checkout -b upstream-v4.13.0 tags/v4.13.0
+git checkout -b upstream-4.13.0 tags/4.13.0
 
 # Alternativt från upstreams release-branch när en sådan finns
 git checkout -b upstream-release-4.11.x github/release/4.11.x
@@ -135,7 +135,7 @@ git checkout -b upstream-release-4.11.x github/release/4.11.x
 git checkout main
 
 # Merge uppdateringarna från vald upstream-källa
-git merge upstream-v4.13.0 --no-ff -m "Merge upstream Rocket.Chat.Electron v4.13.0"
+git merge upstream-4.13.0 --no-ff -m "Merge upstream Rocket.Chat.Electron 4.13.0"
 ```
 
 Om ni utgår från en temporär branch skapad från tag eller release-branch, merge:ar ni den istället för `upstream-main`.
@@ -195,10 +195,10 @@ yarn build
 Snacka.Electron följer alltid samma versionsnummer som Rocket.Chat.Electron:
 
 ```powershell
-# Format: v{ROCKET.CHAT.VERSION}
-# Exempel: v4.13.0 från Rocket.Chat → v4.13.0 i Snacka
+# Format: {ROCKET.CHAT.VERSION} (inget v-prefix)
+# Exempel: 4.13.0 från Rocket.Chat → 4.13.0 i Snacka
 
-git tag -a v4.13.0 -m "Snacka release based on Rocket.Chat.Electron v4.13.0"
+git tag -a 4.13.0 -m "Snacka release based on Rocket.Chat.Electron 4.13.0"
 
 # Push till origin
 git push origin main --tags
@@ -256,7 +256,7 @@ git checkout <earlier-commit> -- build/icons/ src/public/
 ### Versionering: Följ upstream direkt
 
 **Snacka.Electron följer samma versionsnummer som officiell Rocket.Chat.Electron:**
-- `v4.13.0` = Både Rocket.Chat.Electron och Snacka.Electron
+- `4.13.0` = Både Rocket.Chat.Electron och Snacka.Electron
 - Inga suffixar (`-snacka.1`, etc.)
 - **Fördel:** Tydligt vilken version du kör, ingen förvirring
 - **Note:** Om du gör säkerhetspatch mellan releases (dvs bugfixes på v4.13.0), använd git commits - tagga INTE nya versioner för dessa
