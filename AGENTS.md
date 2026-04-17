@@ -18,6 +18,41 @@ yarn electron-builder --x64 --ia32 --arm64 --win nsis
 
 ---
 
+## Snacka.Electron Fork Maintenance
+
+**This is a white label fork of Rocket.Chat.Electron with Snacka branding customizations.**
+
+### Repository Structure
+- **origin**: `https://github.com/trafikverket/Snacka.Electron.git` (your repo)
+- **github**: `https://github.com/RocketChat/Rocket.Chat.Electron.git` (official upstream)
+
+### Key Customizations
+- Product name: "Snacka" (in `package.json`, build assets, etc.)
+- Logotypes & icons: Trafikverket branding
+- URLs: Point to Trafikverket documentation (`gosnacka.trafikverket.se`)
+- GitHub Actions: Artifacts-only (no direct publishing)
+
+### Updating from Official Repo
+
+See **[Fork Maintenance Guide](docs/fork-maintenance-guide.md)** for complete step-by-step instructions on:
+- Syncing with upstream versions
+- Handling merge conflicts while preserving Snacka customizations
+- Version tagging strategy (follow upstream: `v4.13.0`)
+- Testing and validation
+
+**TL;DR:**
+```bash
+git fetch github
+git checkout upstream-main || git checkout -b upstream-main github/master
+git checkout main
+git merge upstream-main --no-ff
+# Resolve conflicts (keep Snacka customizations)
+git tag -a v4.13.0 -m "Snacka release based on Rocket.Chat v4.13.0"
+git push origin main --tags
+```
+
+---
+
 ## Building the Project
 
 ### Workspace Commands (IMPORTANT)
