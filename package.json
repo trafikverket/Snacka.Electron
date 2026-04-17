@@ -84,6 +84,10 @@
     "react-virtuoso": "~4.6.2",
     "redux": "~5.0.1",
     "reselect": "~5.0.1",
+    "dompurify": "~3.3.3",
+    "highlight.js": "~11.11.1",
+    "marked": "~17.0.5",
+    "marked-highlight": "~2.2.3",
     "rimraf": "~5.0.7",
     "semver": "~7.5.4"
   },
@@ -107,6 +111,7 @@
     "@rollup/plugin-node-resolve": "~15.2.3",
     "@rollup/plugin-replace": "~5.0.5",
     "@types/archiver": "~7.0.0",
+    "@types/dompurify": "~3.2.0",
     "@types/electron-devtools-installer": "~2.2.5",
     "@types/jest": "~29.5.11",
     "@types/jsonwebtoken": "~9.0.5",
