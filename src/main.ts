@@ -12,7 +12,6 @@ import {
   watchAndPersistChanges,
 } from './app/main/data';
 import { setUserDataDirectory } from './app/main/dev';
-import { startBrowserHandler } from './browser/ipc';
 import { setupDeepLinks, processDeepLinksInArgs } from './deepLinks/main';
 import { startDocumentViewerHandler } from './documentViewer/ipc';
 import { setupDownloads } from './downloads/main';
@@ -146,7 +145,6 @@ const start = async (): Promise<void> => {
   handleDesktopCapturerGetSources();
   handleClearCacheDialog();
   startDocumentViewerHandler();
-  startBrowserHandler();
   checkSupportedVersionServers();
 
   await processDeepLinksInArgs();

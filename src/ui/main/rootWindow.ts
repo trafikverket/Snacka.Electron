@@ -89,11 +89,6 @@ const getEnableVibrancy = (): boolean => {
   }
 };
 
-const getInitialBackgroundColor = (enableVibrancy: boolean): string => {
-  if (enableVibrancy) return '#00000000';
-  return nativeTheme.shouldUseDarkColors ? '#2f343d' : '#ffffff';
-};
-
 export const createRootWindow = (): void => {
   const enableVibrancy = getEnableVibrancy();
   _rootWindow = new BrowserWindow({
@@ -102,7 +97,7 @@ export const createRootWindow = (): void => {
     minWidth: 400,
     minHeight: 400,
     titleBarStyle: platformTitleBarStyle,
-    backgroundColor: getInitialBackgroundColor(enableVibrancy),
+    backgroundColor: enableVibrancy ? '#00000000' : '#2f343d',
     show: false,
     webPreferences,
     ...(enableVibrancy

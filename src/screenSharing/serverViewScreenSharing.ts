@@ -82,9 +82,7 @@ export const setupServerViewDisplayMedia = (
         },
         { useSystemPicker: false }
       );
-      if (currentProvider.requiresCacheWarming) {
-        prewarmDesktopCapturerCache();
-      }
+      prewarmDesktopCapturerCache();
     } catch (error) {
       console.error(
         'Server view screen sharing: error setting up handler:',
