@@ -74,7 +74,6 @@ type ChannelToArgsMap = {
   'outlook-calendar/has-credentials': () => boolean;
   'outlook-calendar/clear-credentials': () => void;
   'outlook-calendar/set-user-token': (token: string, userId: string) => void;
-  'browser/open-url': (url: string) => void;
   'document-viewer/open-window': (
     url: string,
     format: string,

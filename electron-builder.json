@@ -22,7 +22,7 @@
       "zip"
     ],
     "icon": "build/icon.icns",
-    "bundleVersion": "26050",
+    "bundleVersion": "26040",
     "helperBundleId": "se.trafikverket.snacka.helper",
     "type": "distribution",
     "artifactName": "snacka-${version}-${os}.${ext}",
@@ -111,7 +111,6 @@
     "menuCategory": false
   },
   "msi": {
-    "perMachine": true,
     "warningsAsErrors": false,
     "additionalWixArgs": [
       "-sval"
