@@ -198,10 +198,17 @@ Snacka.Electron följer alltid samma versionsnummer som Rocket.Chat.Electron:
 # Format: {ROCKET.CHAT.VERSION} (inget v-prefix)
 # Exempel: 4.13.0 från Rocket.Chat → 4.13.0 i Snacka
 
-git tag -a 4.13.0 -m "Snacka release based on Rocket.Chat.Electron 4.13.0"
+# OBS: använd lightweight tag (utan -a/-m). Annotated taggar bryter
+# build-release-flödet — GitHubs push-webhook skickar tag-objektets SHA i
+# payload.after, och desktop-release-action vidarebefordrar den till
+# `target_commitish` i POST /repos/.../releases. GitHub returnerar då
+# HTTP 500 med tom body, vilket gör att actionen failar tyst.
+
+git tag 4.13.0 <merge-commit-sha>
 
 # Push till origin
-git push origin main --tags
+git push origin main
+git push origin 4.13.0
 ```
 
 ### Steg 8: Verifiera GitHub Actions
@@ -293,11 +300,12 @@ yarn install
 yarn lint
 yarn build
 
-# 7. Tag ny version (samma som Rocket.Chat.Electron)
-git tag -a v4.13.0 -m "Snacka release based on Rocket.Chat.Electron v4.13.0"
+# 7. Tag ny version (lightweight, samma som Rocket.Chat.Electron, inget v-prefix)
+git tag 4.13.0 HEAD
 
 # 8. Push
-git push origin main --tags
+git push origin main
+git push origin 4.13.0
 
 # 9. Rensa
 Set-Location ..\Snacka.Electron
@@ -350,11 +358,12 @@ git merge upstream-v4.13.0 --no-ff
 git add .
 git commit
 
-# Tag ny version (samma som upstream)
-git tag -a v4.13.0 -m "Snacka release v4.13.0"
+# Tag ny version (lightweight, samma som upstream, inget v-prefix)
+git tag 4.13.0 HEAD
 
 # Push
-git push origin main --tags
+git push origin main
+git push origin 4.13.0
 ```
 
 ---
