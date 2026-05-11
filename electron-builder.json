@@ -110,6 +110,7 @@
     "createStartMenuShortcut": true,
     "menuCategory": false
   },
+  "msiProjectCreated": "./build/msiProjectCreated.js",
   "msi": {
     "perMachine": true,
     "warningsAsErrors": false,
