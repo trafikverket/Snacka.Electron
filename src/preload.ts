@@ -6,8 +6,10 @@ import { JitsiMeetElectron } from './jitsi/preload';
 import { listenToNotificationsRequests } from './notifications/preload';
 import { listenToScreenSharingRequests } from './screenSharing/preload';
 import { RocketChatDesktop } from './servers/preload/api';
+import { listenToNavigateToRouteRequests } from './servers/preload/navigateToRoute';
 import { setServerUrl } from './servers/preload/urls';
 import { createRendererReduxStore, listen } from './store';
+import { listenToTelephonyRequests } from './telephony/preload';
 import { WEBVIEW_DID_NAVIGATE } from './ui/actions';
 import { debounce } from './ui/main/debounce';
 import { listenToMessageBoxEvents } from './ui/preload/messageBox';
@@ -63,6 +65,9 @@ const start = async (): Promise<void> => {
   await createRendererReduxStore();
 
   await invoke('server-view/ready');
+
+  listenToTelephonyRequests();
+  listenToNavigateToRouteRequests();
 
   console.log('[Snacka Desktop] waiting for RocketChatDesktop.onReady');
   RocketChatDesktop.onReady(() => {

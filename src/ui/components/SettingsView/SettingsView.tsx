@@ -1,15 +1,14 @@
-import { Box, IconButton, Scrollable, Tabs } from '@rocket.chat/fuselage';
+import { Box, Scrollable, Tabs } from '@rocket.chat/fuselage';
 import '@rocket.chat/fuselage-polyfills';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
 
-import { dispatch } from '../../../store';
 import type { RootState } from '../../../store/rootReducer';
-import { DOWNLOADS_BACK_BUTTON_CLICKED } from '../../actions';
 import { CertificatesTab } from './CertificatesTab';
 import { DeveloperTab } from './DeveloperTab';
 import { GeneralTab } from './GeneralTab';
+import { VoiceVideoTab } from './VoiceVideoTab';
 
 export const SettingsView = () => {
   const isVisible = useSelector(
@@ -18,14 +17,6 @@ export const SettingsView = () => {
   const { t } = useTranslation();
 
   const [currentTab, setCurrentTab] = useState('general');
-
-  const isSideBarEnabled = useSelector(
-    ({ isSideBarEnabled }: RootState) => isSideBarEnabled
-  );
-
-  const lastSelectedServerUrl = useSelector(
-    ({ lastSelectedServerUrl }: RootState) => lastSelectedServerUrl
-  );
 
   const isDeveloperModeEnabled = useSelector(
     ({ isDeveloperModeEnabled }: RootState) => isDeveloperModeEnabled
@@ -37,12 +28,6 @@ export const SettingsView = () => {
     }
   }, [isDeveloperModeEnabled, currentTab]);
 
-  const handleBackButton = function (): void {
-    dispatch({
-      type: DOWNLOADS_BACK_BUTTON_CLICKED,
-      payload: lastSelectedServerUrl,
-    });
-  };
   return (
     <Box
       display={isVisible ? 'flex' : 'none'}
@@ -55,16 +40,16 @@ export const SettingsView = () => {
     >
       <Box
         width='full'
-        padding={24}
+        pi='x24'
+        pbs='x24'
+        pbe='x16'
         display='flex'
         flexDirection='row'
         flexWrap='nowrap'
+        alignItems='center'
         fontScale='h1'
         color='default'
       >
-        {!isSideBarEnabled && (
-          <IconButton icon='arrow-back' onClick={handleBackButton} />
-        )}
         {t('settings.title')}
       </Box>
 
@@ -81,6 +66,12 @@ export const SettingsView = () => {
         >
           {t('settings.certificates')}
         </Tabs.Item>
+        <Tabs.Item
+          selected={currentTab === 'voiceVideo'}
+          onClick={() => setCurrentTab('voiceVideo')}
+        >
+          {t('settings.voiceVideo')}
+        </Tabs.Item>
         {isDeveloperModeEnabled && (
           <Tabs.Item
             selected={currentTab === 'developer'}
@@ -94,6 +85,7 @@ export const SettingsView = () => {
         <Box m='x24'>
           {(currentTab === 'general' && <GeneralTab />) ||
             (currentTab === 'certificates' && <CertificatesTab />) ||
+            (currentTab === 'voiceVideo' && <VoiceVideoTab />) ||
             (currentTab === 'developer' && <DeveloperTab />)}
         </Box>
       </Scrollable>

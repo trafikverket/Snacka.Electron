@@ -1,6 +1,5 @@
 import { Box, PaletteStyleTag } from '@rocket.chat/fuselage';
-import type { Themes } from '@rocket.chat/fuselage/dist/components/PaletteStyleTag/types/themes';
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useLayoutEffect } from 'react';
 import { useSelector } from 'react-redux';
 
 import type { RootState } from '../../../store/rootReducer';
@@ -15,36 +14,40 @@ import { SelectClientCertificateDialog } from '../SelectClientCertificateDialog'
 import { ServerInfoModal } from '../ServerInfoModal';
 import { ServersView } from '../ServersView';
 import { SettingsView } from '../SettingsView';
-import { SideBar } from '../SideBar';
 import { SupportedVersionDialog } from '../SupportedVersionDialog';
+import { TabBar } from '../TabBar';
+import { MeatballMenuButton } from '../TabBar/MeatballMenuButton';
+import { WindowControls } from '../TabBar/WindowControls';
+import { TelephonyDefaultHandlerPromptModal } from '../TelephonyDefaultHandlerPromptModal';
+import { TelephonyServerSelectModal } from '../TelephonyServerSelectModal';
 import { TopBar } from '../TopBar';
-import { UpdateDialog } from '../UpdateDialog';
+import { DownloadsIndicator } from '../TopBar/DownloadsIndicator';
+import { ServerSwitcher } from '../TopBar/ServerSwitcher';
+import { UpdateLabel } from '../TopBar/UpdateLabel';
+import { useShellTheme } from '../hooks/useShellTheme';
 import TooltipProvider from '../utils/TooltipProvider';
-import { GlobalStyles, WindowDragBar } from './styles';
+import {
+  CLIENT_CHROME_CORNER_RADIUS_PX,
+  GlobalStyles,
+  WindowDragBar,
+} from './styles';
+
+const usesLinuxClientChromeRounding = process.platform === 'linux';
 
 export const Shell = () => {
   const appPath = useSelector(({ appPath }: RootState) => appPath);
-  const machineTheme = useSelector(
-    ({ machineTheme }: RootState) => machineTheme
-  );
-  const userThemePreference = useSelector(
-    ({ userThemePreference }: RootState) => userThemePreference
-  );
   const isTransparentWindowEnabled = useSelector(
     ({ isTransparentWindowEnabled }: RootState) => isTransparentWindowEnabled
   );
-
-  const [currentTheme, setCurrentTheme] = useState<Themes | undefined>(
-    machineTheme as Themes
+  const navigationLayout = useSelector(
+    ({ navigationLayout }: RootState) => navigationLayout
+  );
+  const isWindowExpanded = useSelector(
+    ({ rootWindowState }: RootState) =>
+      rootWindowState.maximized || rootWindowState.fullscreen
   );
 
-  useEffect(() => {
-    if (userThemePreference === 'auto') {
-      setCurrentTheme(machineTheme as Themes);
-    } else {
-      setCurrentTheme(userThemePreference as Themes);
-    }
-  }, [machineTheme, userThemePreference]);
+  const shellTheme = useShellTheme();
 
   useLayoutEffect(() => {
     if (!appPath) {
@@ -64,27 +67,120 @@ export const Shell = () => {
   return (
     <TooltipProvider>
       <PaletteStyleTag
-        theme={currentTheme}
+        theme={shellTheme}
         selector=':root'
         // tagId='sidebar-palette'
       />
       <GlobalStyles isTransparentWindowEnabled={isTransparentWindowEnabled} />
-      {process.platform === 'darwin' && <WindowDragBar />}
+      {navigationLayout !== 'tabs' && process.platform === 'darwin' && (
+        <WindowDragBar />
+      )}
       <Box
-        bg='room'
+        bg={isTransparentWindowEnabled ? 'transparent' : 'surface-neutral'}
         display='flex'
-        flexWrap='wrap'
-        height='100vh'
+        flexWrap='nowrap'
+        height='100%'
+        width='100%'
+        maxWidth='100%'
         flexDirection='column'
+        style={
+          usesLinuxClientChromeRounding
+            ? {
+                // Soft outer corners on Linux only; drop when maximized.
+                borderRadius: isWindowExpanded
+                  ? 0
+                  : CLIENT_CHROME_CORNER_RADIUS_PX,
+                overflow: 'hidden',
+                boxSizing: 'border-box',
+                // Inset hairline stays inside the box (outer box-shadow was
+                // adding ~1px and caused a horizontal scrollbar on Linux).
+                boxShadow: isWindowExpanded
+                  ? undefined
+                  : 'inset 0 0 0 1px var(--rcx-color-shadow-elevation-border)',
+              }
+            : undefined
+        }
       >
-        {process.platform === 'darwin' && <TopBar />}
+        {/* Windows + Linux: client-side window chrome (min/max/close in-strip). */}
+        {navigationLayout === 'tabs' &&
+          (process.platform === 'win32' || process.platform === 'linux') && (
+            <TabBar
+              leadingSlot={
+                <>
+                  <MeatballMenuButton />
+                  <UpdateLabel />
+                  <DownloadsIndicator />
+                </>
+              }
+              trailingSlot={<WindowControls />}
+            />
+          )}
+        {/* macOS tabs: system traffic lights; meatball/downloads/update trail. */}
+        {navigationLayout === 'tabs' && process.platform === 'darwin' && (
+          <TabBar
+            trailingSlot={
+              <>
+                <UpdateLabel />
+                <DownloadsIndicator />
+                <MeatballMenuButton />
+              </>
+            }
+          />
+        )}
+        {navigationLayout !== 'tabs' && process.platform === 'darwin' && (
+          <TopBar
+            centerSlot={
+              navigationLayout === 'hidden' ? <ServerSwitcher /> : undefined
+            }
+            trailingSlot={
+              <>
+                <UpdateLabel />
+                <DownloadsIndicator compact />
+              </>
+            }
+          />
+        )}
+        {navigationLayout !== 'tabs' &&
+          (process.platform === 'win32' || process.platform === 'linux') && (
+            <TopBar
+              leadingSlot={
+                <>
+                  {navigationLayout === 'hidden' && <MeatballMenuButton tiny />}
+                  <UpdateLabel />
+                  <DownloadsIndicator compact />
+                </>
+              }
+              centerSlot={
+                navigationLayout === 'hidden' ? <ServerSwitcher /> : undefined
+              }
+              trailingSlot={<WindowControls />}
+              textAlignment='left'
+            />
+          )}
         <Box display='flex' flexDirection='row' flexGrow={1}>
-          <SideBar />
+          {navigationLayout === 'sidebar' && (
+            <TabBar
+              orientation='vertical'
+              trailingSlot={<MeatballMenuButton orientation='vertical' />}
+            />
+          )}
           <Box
             width='100%'
             position='relative'
             alignSelf='stretch'
             flexBasis='1 1 auto'
+            style={{
+              boxShadow: '0 0 3px 0px rgba(0,0,0,0.1)',
+              border: '1px solid rgba(0,0,0,0.1)',
+              overflow: 'hidden',
+              borderRadius: process.platform === 'darwin' ? '14px' : '8px',
+              margin: '4px',
+              marginTop: '0px',
+              // Always set marginLeft explicitly: toggling it via a conditional
+              // spread leaves React unable to restore the '4px' shorthand value
+              // when the key is removed, so it would stick at 0 after switching.
+              marginLeft: navigationLayout === 'sidebar' ? '0px' : '4px',
+            }}
           >
             <ServersView />
             <AddServerView />
@@ -99,9 +195,10 @@ export const Shell = () => {
       <ScreenSharingDialog />
       <RootScreenSharePicker />
       <SelectClientCertificateDialog />
-      <UpdateDialog />
       <ClearCacheDialog />
       <OutlookCredentialsDialog />
+      <TelephonyServerSelectModal />
+      <TelephonyDefaultHandlerPromptModal />
     </TooltipProvider>
   );
 };

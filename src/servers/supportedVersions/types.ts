@@ -8,6 +8,14 @@ export type Message = {
   subtitle: string;
   description: string;
   type: 'primary' | 'warning' | 'danger';
+  /**
+   * Roles allowed to see this message. When omitted (or empty), the message is
+   * shown to every user. When present, the message is only shown to users whose
+   * roles intersect this list (e.g. `["admin"]` targets workspace admins only).
+   * Clients that predate this field ignore it and keep showing the message to
+   * everyone, so the field is backward compatible.
+   */
+  roles?: string[];
   params: Record<string, unknown> & {
     instance_version?: string;
     instance_email?: string;
@@ -46,8 +54,14 @@ export type SupportedVersions = {
 
 export type ServerInfo = {
   version: string;
-  uniqueId: string;
-  build: {
+  /**
+   * `build`, `marketplaceApiVersion`, and `commit` are only present when the
+   * caller is authenticated with the view-statistics permission. The
+   * desktop app always requests /api/info unauthenticated, so these fields
+   * never arrive on the wire in practice. The sha-exception path relies on
+   * the persisted `server.gitCommitHash` pushed by the web client instead.
+   */
+  build?: {
     date: string;
     nodeVersion: string;
     arch: string;
@@ -57,8 +71,8 @@ export type ServerInfo = {
     freeMemory: number;
     cpus: number;
   };
-  marketplaceApiVersion: string;
-  commit: {
+  marketplaceApiVersion?: string;
+  commit?: {
     hash: string;
     date: Date;
     author: string;
@@ -74,6 +88,9 @@ export type ServerInfo = {
     desktop: string;
     mobile: string;
   };
+  cloudWorkspaceId?: string;
+  workspaceUrl?: string;
+  hashedWorkspaceUrl?: string;
 };
 
 export type CloudInfo = {

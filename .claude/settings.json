@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/block-sensitive-files.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/auto-format.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/typecheck.sh",
+            "timeout": 60,
+            "async": true
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(yarn test *)",
+      "Bash(yarn lint)",
+      "Bash(yarn lint *)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(node .gitnexus/run.cjs *)",
+      "mcp__gitnexus__detect_changes",
+      "mcp__gitnexus__impact",
+      "mcp__gitnexus__query",
+      "mcp__gitnexus__context",
+      "mcp__plugin_context-mode_context-mode__ctx_search"
+    ]
+  }
+}

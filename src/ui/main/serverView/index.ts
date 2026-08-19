@@ -7,16 +7,13 @@ import type {
   Event,
   Input,
   MediaAccessPermissionRequest,
-  MenuItemConstructorOptions,
   OpenExternalPermissionRequest,
-  Session,
   UploadFile,
   UploadRawData,
   WebContents,
   WebPreferences,
 } from 'electron';
-import { app, clipboard, Menu, webContents } from 'electron';
-import i18next from 'i18next';
+import { app, clipboard, webContents } from 'electron';
 
 import { setupPreloadReload } from '../../../app/main/dev';
 import { handle } from '../../../ipc/main';
@@ -24,12 +21,12 @@ import { CERTIFICATES_CLEARED } from '../../../navigation/actions';
 import { isProtocolAllowed } from '../../../navigation/main';
 import { setupServerViewDisplayMedia } from '../../../screenSharing/serverViewScreenSharing';
 import { SERVER_DOCUMENT_VIEWER_OPEN_URL } from '../../../servers/actions';
+import { attachBootWatchdog } from '../../../servers/bootWatchdog';
 import type { Server } from '../../../servers/common';
 import { dispatch, listen, select } from '../../../store';
 import { openExternal } from '../../../utils/browserLauncher';
 import {
   LOADING_ERROR_VIEW_RELOAD_SERVER_CLICKED,
-  SIDE_BAR_CONTEXT_MENU_TRIGGERED,
   SIDE_BAR_REMOVE_SERVER_CLICKED,
   WEBVIEW_READY,
   WEBVIEW_DID_FAIL_LOAD,
@@ -48,9 +45,8 @@ import {
 } from '../../actions';
 import { handleMediaPermissionRequest } from '../mediaPermissions';
 import { getRootWindow } from '../rootWindow';
+import { isMarkdownViewerDownloadUrl } from './isMarkdownViewerDownloadUrl';
 import { createPopupMenuForServerView } from './popupMenu';
-
-const t = i18next.t.bind(i18next);
 
 const webContentsByServerUrl = new Map<Server['url'], WebContents>();
 
@@ -105,6 +101,36 @@ const resolvePreloadPath = (isVideoCall: boolean): string | null => {
   return null;
 };
 
+/**
+ * Determines if a permission request's origin matches a configured server.
+ * Used to gate permissions (geolocation, notifications, fullscreen) that
+ * Electron would otherwise grant unconditionally, regardless of which
+ * origin — including a compromised or unexpected one — asked for them.
+ */
+export const isRequestFromKnownServer = (
+  requestingUrl: string | undefined,
+  servers: ReadonlyArray<Pick<Server, 'url'>>
+): boolean => {
+  if (!requestingUrl) {
+    return false;
+  }
+  try {
+    const requestingOrigin = new URL(requestingUrl).origin;
+    return servers.some((server) => {
+      if (!server.url) {
+        return false;
+      }
+      try {
+        return new URL(server.url).origin === requestingOrigin;
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+};
+
 export const getWebContentsByServerUrl = (
   url: string
 ): WebContents | undefined => webContentsByServerUrl.get(url);
@@ -119,6 +145,76 @@ export const getServerUrlByWebContentsId = (
   return Array.from(webContentsByServerUrl.entries()).find(
     ([, wc]) => wc === targetWebContents
   )?.[0];
+};
+
+export const setupServerViewPermissionHandler = (
+  guestWebContents: WebContents,
+  rootWindow: BrowserWindow
+): void => {
+  guestWebContents.session.setPermissionRequestHandler(
+    async (_webContents, permission, callback, details) => {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Permission request', permission, details);
+      }
+      switch (permission) {
+        case 'media': {
+          const { mediaTypes = [] } = details as MediaAccessPermissionRequest;
+          try {
+            await handleMediaPermissionRequest(
+              mediaTypes as ReadonlyArray<'audio' | 'video'>,
+              rootWindow,
+              'recordMessage',
+              callback
+            );
+          } catch (error) {
+            console.error(
+              'Error handling media permission request in server view:',
+              error
+            );
+            callback(false);
+          }
+          return;
+        }
+
+        case 'midiSysex':
+        case 'pointerLock':
+          callback(true);
+          return;
+
+        case 'geolocation':
+        case 'notifications':
+        case 'fullscreen': {
+          const { requestingUrl } = details;
+          const servers = select(({ servers }) => servers);
+          callback(isRequestFromKnownServer(requestingUrl, servers));
+          return;
+        }
+
+        case 'openExternal': {
+          const { externalURL } = details as OpenExternalPermissionRequest;
+          if (!externalURL) {
+            callback(false);
+            return;
+          }
+
+          try {
+            const allowed = await isProtocolAllowed(externalURL);
+            callback(allowed);
+          } catch (error) {
+            console.error(
+              'Failed to validate external protocol request:',
+              error
+            );
+            callback(false);
+          }
+          return;
+        }
+
+        default:
+          callback(false);
+      }
+    }
+  );
 };
 
 const initializeServerWebContentsAfterReady = (
@@ -169,23 +265,23 @@ const initializeServerWebContentsAfterAttach = (
   rootWindow: BrowserWindow
 ): void => {
   webContentsByServerUrl.set(serverUrl, guestWebContents);
+  attachBootWatchdog(serverUrl, guestWebContents);
 
   const webviewSession = guestWebContents.session;
 
   // Intercept markdown file downloads and open in document viewer
   webviewSession.on('will-download', (_event, item) => {
-    if (item.getFilename().endsWith('.md')) {
-      const downloadUrl = item.getURL();
-      item.cancel();
-      dispatch({
-        type: SERVER_DOCUMENT_VIEWER_OPEN_URL,
-        payload: {
-          server: serverUrl,
-          documentUrl: downloadUrl,
-          documentFormat: 'markdown',
-        },
-      });
-    }
+    const downloadUrl = item.getURL();
+    if (!isMarkdownViewerDownloadUrl(downloadUrl, item.getFilename())) return;
+    item.cancel();
+    dispatch({
+      type: SERVER_DOCUMENT_VIEWER_OPEN_URL,
+      payload: {
+        server: serverUrl,
+        documentUrl: downloadUrl,
+        documentFormat: 'markdown',
+      },
+    });
   });
 
   guestWebContents.addListener('destroyed', () => {
@@ -402,48 +498,6 @@ export const attachGuestWebContentsEvents = async (): Promise<void> => {
     );
   };
 
-  const handlePermissionRequest: Parameters<
-    Session['setPermissionRequestHandler']
-  >[0] = async (_webContents, permission, callback, details) => {
-    console.log('Permission request', permission, details);
-    switch (permission) {
-      case 'media': {
-        const { mediaTypes = [] } = details as MediaAccessPermissionRequest;
-        await handleMediaPermissionRequest(
-          mediaTypes as ReadonlyArray<'audio' | 'video'>,
-          rootWindow,
-          'recordMessage',
-          callback
-        );
-        return;
-      }
-
-      case 'geolocation':
-      case 'notifications':
-      case 'midiSysex':
-      case 'pointerLock':
-      case 'fullscreen':
-        callback(true);
-        return;
-
-      case 'openExternal': {
-        if (!(details as OpenExternalPermissionRequest).externalURL) {
-          callback(false);
-          return;
-        }
-
-        const allowed = await isProtocolAllowed(
-          (details as OpenExternalPermissionRequest).externalURL as string
-        );
-        callback(allowed);
-        return;
-      }
-
-      default:
-        callback(false);
-    }
-  };
-
   listen(WEBVIEW_READY, (action) => {
     const guestWebContents = webContents.fromId(
       action.payload.webContentsId
@@ -454,9 +508,7 @@ export const attachGuestWebContentsEvents = async (): Promise<void> => {
       rootWindow
     );
 
-    guestWebContents.session.setPermissionRequestHandler(
-      handlePermissionRequest
-    );
+    setupServerViewPermissionHandler(guestWebContents, rootWindow);
 
     setupServerViewDisplayMedia(guestWebContents);
 
@@ -465,9 +517,16 @@ export const attachGuestWebContentsEvents = async (): Promise<void> => {
 
     // prevents the webview from navigating because of twitter preview links
     guestWebContents.on('will-navigate', (e, redirectUrl) => {
+      const { protocol, hostname } = new URL(redirectUrl);
+
+      if (protocol !== 'http:' && protocol !== 'https:') {
+        e.preventDefault();
+        return;
+      }
+
       const preventNavigateHosts = ['t.co', 'twitter.com'];
 
-      if (preventNavigateHosts.includes(new URL(redirectUrl).hostname)) {
+      if (preventNavigateHosts.includes(hostname)) {
         e.preventDefault();
         isProtocolAllowed(redirectUrl).then((allowed) => {
           if (!allowed) {
@@ -507,7 +566,7 @@ export const attachGuestWebContentsEvents = async (): Promise<void> => {
 
   listen(SIDE_BAR_SERVER_COPY_URL, async (action) => {
     const guestWebContents = getWebContentsByServerUrl(action.payload);
-    const currentUrl = await guestWebContents?.getURL();
+    const currentUrl = guestWebContents?.getURL();
     clipboard.writeText(currentUrl || '');
   });
 
@@ -531,73 +590,6 @@ export const attachGuestWebContentsEvents = async (): Promise<void> => {
     dispatch({
       type: SIDE_BAR_REMOVE_SERVER_CLICKED,
       payload: action.payload,
-    });
-  });
-
-  listen(SIDE_BAR_CONTEXT_MENU_TRIGGERED, (action) => {
-    const { payload: serverUrl } = action;
-
-    const menuTemplate: MenuItemConstructorOptions[] = [
-      {
-        label: t('sidebar.item.reload'),
-        click: () => {
-          const guestWebContents = getWebContentsByServerUrl(serverUrl);
-          if (!guestWebContents) {
-            return;
-          }
-          guestWebContents.loadURL(serverUrl).catch((error) => {
-            console.error('Failed to load URL for guestWebContents:', error);
-          });
-          if (serverUrl) {
-            dispatch({
-              type: WEBVIEW_SERVER_RELOADED,
-              payload: { url: serverUrl },
-            });
-          }
-        },
-      },
-      {
-        label: t('sidebar.item.remove'),
-        click: () => {
-          dispatch({
-            type: SIDE_BAR_REMOVE_SERVER_CLICKED,
-            payload: serverUrl,
-          });
-        },
-      },
-      { type: 'separator' },
-      {
-        label: t('sidebar.item.openDevTools'),
-        click: () => {
-          const guestWebContents = getWebContentsByServerUrl(serverUrl);
-          guestWebContents?.openDevTools();
-        },
-      },
-      {
-        label: t('sidebar.item.copyCurrentUrl'),
-        click: async () => {
-          const guestWebContents = getWebContentsByServerUrl(serverUrl);
-          const currentUrl = await guestWebContents?.getURL();
-          clipboard.writeText(currentUrl || '');
-        },
-      },
-      {
-        label: t('sidebar.item.reloadClearingCache'),
-        click: async () => {
-          const guestWebContents = getWebContentsByServerUrl(serverUrl);
-          if (!guestWebContents) {
-            return;
-          }
-          dispatch({
-            type: CLEAR_CACHE_TRIGGERED,
-            payload: guestWebContents.id,
-          });
-        },
-      },
-    ];
-    const menu = Menu.buildFromTemplate(menuTemplate);
-    menu.popup({
-      window: rootWindow,
     });
   });
 

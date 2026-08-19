@@ -22,10 +22,15 @@ import {
   APP_MAIN_WINDOW_TITLE_SET,
 } from '../../app/actions';
 import { setupRootWindowReload } from '../../app/main/dev';
-import { getPersistedValues } from '../../app/main/persistence';
 import { select, watch, listen, dispatchLocal, dispatch } from '../../store';
 import type { RootState } from '../../store/rootReducer';
-import { ROOT_WINDOW_STATE_CHANGED, WEBVIEW_FOCUS_REQUESTED } from '../actions';
+import {
+  ROOT_WINDOW_STATE_CHANGED,
+  WEBVIEW_FOCUS_REQUESTED,
+  WINDOW_CONTROLS_CLOSE_CLICKED,
+  WINDOW_CONTROLS_MAXIMIZE_CLICKED,
+  WINDOW_CONTROLS_MINIMIZE_CLICKED,
+} from '../actions';
 import type { WindowState } from '../common';
 import { selectGlobalBadge, selectGlobalBadgeCount } from '../selectors';
 import { debounce } from './debounce';
@@ -72,44 +77,42 @@ export const getRootWindow = (): Promise<BrowserWindow> =>
     }, 300);
   });
 
+// Windows and Linux use client-side chrome (WindowControls in the shell).
+// macOS keeps a hidden title bar so traffic lights can sit in the tab strip.
 const platformTitleBarStyle =
-  process.platform === 'darwin' ? 'hidden' : 'default';
+  process.platform === 'darwin' ||
+  process.platform === 'win32' ||
+  process.platform === 'linux'
+    ? 'hidden'
+    : 'default';
 
 const isMac = process.platform === 'darwin';
-const getEnableVibrancy = (): boolean => {
-  if (!isMac) {
-    return false;
-  }
-  try {
-    const persistedValues: { isTransparentWindowEnabled?: boolean } =
-      getPersistedValues();
-    return persistedValues?.isTransparentWindowEnabled === true;
-  } catch (error) {
-    return false;
-  }
-};
-
-const getInitialBackgroundColor = (enableVibrancy: boolean): string => {
-  if (enableVibrancy) return '#00000000';
-  return nativeTheme.shouldUseDarkColors ? '#2f343d' : '#ffffff';
-};
+// Linux client chrome is a plain rectangle under most WMs. Transparent + CSS
+// radius paints soft outer corners. Windows already gets DWM rounding — leave it.
+const usesLinuxClientChromeRounding = process.platform === 'linux';
 
 export const createRootWindow = (): void => {
-  const enableVibrancy = getEnableVibrancy();
   _rootWindow = new BrowserWindow({
     width: 1000,
     height: 600,
     minWidth: 400,
     minHeight: 400,
     titleBarStyle: platformTitleBarStyle,
-    backgroundColor: getInitialBackgroundColor(enableVibrancy),
+    ...(isMac ? { trafficLightPosition: { x: 12, y: 13 } } : {}),
     show: false,
     webPreferences,
-    ...(enableVibrancy
+    ...(isMac
       ? {
           transparent: true,
           vibrancy: 'sidebar',
           visualEffectState: 'active',
+        }
+      : {}),
+    ...(usesLinuxClientChromeRounding
+      ? {
+          transparent: true,
+          backgroundColor: '#00000000',
+          hasShadow: true,
         }
       : {}),
   });
@@ -137,6 +140,9 @@ export const createRootWindow = (): void => {
 export const normalizeNumber = (value: number | undefined): number =>
   value && isFinite(1 / value) ? value : 0;
 
+// A window counts as on-screen if it overlaps any display, rather than being fully contained
+// by one. This preserves the saved bounds for windows parked at a screen edge or spanning two
+// monitors, which were previously discarded and re-centered on the primary display (#2714).
 export const isInsideSomeScreen = ({
   x,
   y,
@@ -147,10 +153,10 @@ export const isInsideSomeScreen = ({
     .getAllDisplays()
     .some(
       ({ bounds }) =>
-        x >= bounds.x &&
-        y >= bounds.y &&
-        x + width <= bounds.x + bounds.width &&
-        y + height <= bounds.y + bounds.height
+        x < bounds.x + bounds.width &&
+        x + width > bounds.x &&
+        y < bounds.y + bounds.height &&
+        y + height > bounds.y
     );
 
 export const applyRootWindowState = (browserWindow: BrowserWindow): void => {
@@ -313,6 +319,43 @@ export const setupRootWindow = (): void => {
         rootWindow.show();
       }, 'Webview focus request');
     }),
+    listen(WINDOW_CONTROLS_MINIMIZE_CLICKED, async () => {
+      await safeWindowOperation((browserWindow) => {
+        browserWindow.minimize();
+      }, 'Window controls minimize');
+    }),
+    listen(WINDOW_CONTROLS_MAXIMIZE_CLICKED, async () => {
+      await safeWindowOperation((browserWindow) => {
+        if (browserWindow.isFullScreen()) {
+          browserWindow.setFullScreen(false);
+          return;
+        }
+        if (browserWindow.isMaximized()) {
+          browserWindow.unmaximize();
+          return;
+        }
+        browserWindow.maximize();
+      }, 'Window controls maximize');
+    }),
+    listen(WINDOW_CONTROLS_CLOSE_CLICKED, async () => {
+      await safeWindowOperation((browserWindow) => {
+        browserWindow.close();
+      }, 'Window controls close');
+    }),
+    ...(process.platform === 'darwin'
+      ? [
+          watch(
+            ({ navigationLayout }) => navigationLayout,
+            async (navigationLayout) => {
+              await safeWindowOperation((browserWindow) => {
+                browserWindow.setWindowButtonPosition(
+                  navigationLayout === 'tabs' ? { x: 12, y: 13 } : null
+                );
+              }, 'Window button position update');
+            }
+          ),
+        ]
+      : []),
   ];
 
   const fetchAndDispatchWindowState = debounce(async (): Promise<void> => {
@@ -342,6 +385,25 @@ export const setupRootWindow = (): void => {
     rootWindow.addListener('move', fetchAndDispatchWindowState);
 
     fetchAndDispatchWindowState();
+
+    const dispatchWindowStateImmediately = async (): Promise<void> => {
+      try {
+        const state = await fetchRootWindowState();
+        dispatch({
+          type: ROOT_WINDOW_STATE_CHANGED,
+          payload: state,
+        });
+      } catch (error) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Failed to fetch window state:', error);
+        }
+      }
+    };
+
+    rootWindow.addListener('maximize', dispatchWindowStateImmediately);
+    rootWindow.addListener('unmaximize', dispatchWindowStateImmediately);
+    rootWindow.addListener('enter-full-screen', dispatchWindowStateImmediately);
+    rootWindow.addListener('leave-full-screen', dispatchWindowStateImmediately);
 
     rootWindow.addListener('focus', async () => {
       rootWindow.flashFrame(false);
@@ -506,16 +568,7 @@ export const setupRootWindow = (): void => {
             browserWindow.setOverlayIcon(overlayIcon, overlayDescription);
           }
         }, 'Window icon update');
-      }),
-      watch(
-        ({ isMenuBarEnabled }) => isMenuBarEnabled,
-        async (isMenuBarEnabled) => {
-          await safeWindowOperation((browserWindow) => {
-            browserWindow.autoHideMenuBar = !isMenuBarEnabled;
-            browserWindow.setMenuBarVisibility(isMenuBarEnabled);
-          }, 'Menu bar visibility update');
-        }
-      )
+      })
     );
   }
 
@@ -623,6 +676,20 @@ export const watchMachineTheme = (): void => {
   nativeTheme.on('updated', () => {
     dispatchMachineTheme();
   });
+
+  // Drive Electron's themeSource from the user's preference so the whole app —
+  // secondary windows (screen picker, log viewer) and any prefers-color-scheme
+  // styles, plus native menus/dialogs — follows the setting, not just the shell
+  // chrome palette. 'auto' defers to the OS ('system').
+  watch(
+    ({ userThemePreference }: RootState) => userThemePreference,
+    (userThemePreference) => {
+      nativeTheme.themeSource =
+        userThemePreference === 'light' || userThemePreference === 'dark'
+          ? userThemePreference
+          : 'system';
+    }
+  );
 };
 
 const dispatchMachineTheme = (): void => {

@@ -1,8 +1,10 @@
-import { createStructuredSelector } from 'reselect';
+import { createSelector, createStructuredSelector } from 'reselect';
 
 import type { RootState } from '../store/rootReducer';
 
-export const selectPersistableValues = createStructuredSelector({
+// Split into two structured selectors: a single one with 46+ keys exceeds
+// TypeScript's type-instantiation depth limit under ts-jest (TS2589).
+const selectPersistableValuesA = createStructuredSelector({
   currentView: ({ currentView }: RootState) => currentView,
   doCheckForUpdatesOnStartup: ({ doCheckForUpdatesOnStartup }: RootState) =>
     doCheckForUpdatesOnStartup,
@@ -13,6 +15,7 @@ export const selectPersistableValues = createStructuredSelector({
     isShowWindowOnUnreadChangedEnabled,
   }: RootState) => isShowWindowOnUnreadChangedEnabled,
   isSideBarEnabled: ({ isSideBarEnabled }: RootState) => isSideBarEnabled,
+  navigationLayout: ({ navigationLayout }: RootState) => navigationLayout,
   isTrayIconEnabled: ({ isTrayIconEnabled }: RootState) => isTrayIconEnabled,
   rootWindowState: ({ rootWindowState }: RootState) => rootWindowState,
   servers: ({ servers }: RootState) => servers,
@@ -35,11 +38,16 @@ export const selectPersistableValues = createStructuredSelector({
   isReportEnabled: ({ isReportEnabled }: RootState) => isReportEnabled,
   isFlashFrameEnabled: ({ isFlashFrameEnabled }: RootState) =>
     isFlashFrameEnabled,
+  isDownloadsPercentageEnabled: ({ isDownloadsPercentageEnabled }: RootState) =>
+    isDownloadsPercentageEnabled,
   isInternalVideoChatWindowEnabled: ({
     isInternalVideoChatWindowEnabled,
   }: RootState) => isInternalVideoChatWindowEnabled,
   isMinimizeOnCloseEnabled: ({ isMinimizeOnCloseEnabled }: RootState) =>
     isMinimizeOnCloseEnabled,
+});
+
+const selectPersistableValuesB = createStructuredSelector({
   isAddNewServersEnabled: ({ isAddNewServersEnabled }: RootState) =>
     isAddNewServersEnabled,
   isDeveloperModeEnabled: ({ isDeveloperModeEnabled }: RootState) =>
@@ -83,4 +91,17 @@ export const selectPersistableValues = createStructuredSelector({
   }: RootState) => isDetailedEventsLoggingEnabled,
   isDebugLoggingEnabled: ({ isDebugLoggingEnabled }: RootState) =>
     isDebugLoggingEnabled,
+  e2ePdfPreviewSizeLimit: ({ e2ePdfPreviewSizeLimit }: RootState) =>
+    e2ePdfPreviewSizeLimit,
+  telephonyPreferredServer: ({ telephonyPreferredServer }: RootState) =>
+    telephonyPreferredServer,
+  telephonyGlobalShortcutConfig: ({
+    telephonyGlobalShortcutConfig,
+  }: RootState) => telephonyGlobalShortcutConfig,
+  isTelephonyEnabled: ({ isTelephonyEnabled }: RootState) => isTelephonyEnabled,
 });
+
+export const selectPersistableValues = createSelector(
+  [selectPersistableValuesA, selectPersistableValuesB],
+  (a, b) => ({ ...a, ...b })
+);

@@ -1,7 +1,9 @@
 import type { Certificate } from 'electron';
 
+import { DEFAULT_E2E_PDF_PREVIEW_SIZE_LIMIT_MB } from '../constants';
 import type { Download } from '../downloads/common';
 import type { Server } from '../servers/common';
+import type { TelephonyGlobalShortcutConfig } from '../telephony/actions';
 import type { WindowState } from '../ui/common';
 
 type PersistableValues_0_0_0 = {
@@ -106,10 +108,40 @@ type PersistableValues_4_13_0 = PersistableValues_4_11_0 & {
   isDebugLoggingEnabled: boolean;
 };
 
+type PersistableValues_4_14_0 = PersistableValues_4_13_0 & {
+  isTelephonyEnabled: boolean;
+  telephonyPreferredServer: string | null;
+  telephonyGlobalShortcutConfig: TelephonyGlobalShortcutConfig;
+};
+
+type PersistableValues_4_15_0 = PersistableValues_4_14_0 & {
+  e2ePdfPreviewSizeLimit: number;
+};
+
+type PersistableValues_4_16_0 = PersistableValues_4_15_0 & {
+  navigationLayout: 'tabs' | 'sidebar' | 'hidden';
+};
+
+type PersistableValues_4_16_1 = PersistableValues_4_16_0 & {
+  isDownloadsPercentageEnabled: boolean;
+};
+
+type PersistableValues_4_16_2 = PersistableValues_4_16_1 & {
+  /**
+   * Bumped when the Windows/Linux menu-bar default changes so existing
+   * installs pick up the new auto-hide default once without clobbering a
+   * later user choice. macOS ignores this field.
+   */
+  menuBarDefaultRevision?: number;
+};
+
 export type PersistableValues = Pick<
-  PersistableValues_4_13_0,
-  keyof PersistableValues_4_13_0
+  PersistableValues_4_16_2,
+  keyof PersistableValues_4_16_2
 >;
+
+/** Current menu-bar default policy for Windows/Linux (auto-hide, Alt reveals). */
+export const MENU_BAR_DEFAULT_REVISION = 1;
 
 export const migrations = {
   '>=3.1.0': (before: PersistableValues_0_0_0): PersistableValues_3_1_0 => {
@@ -201,4 +233,49 @@ export const migrations = {
     ...before,
     isDebugLoggingEnabled: false,
   }),
+  '>=4.14.0': (before: PersistableValues_4_13_0): PersistableValues_4_14_0 => ({
+    ...before,
+    isTelephonyEnabled:
+      (before as Partial<PersistableValues_4_14_0>).isTelephonyEnabled ?? false,
+    telephonyPreferredServer:
+      (before as Partial<PersistableValues_4_14_0>).telephonyPreferredServer ??
+      null,
+    telephonyGlobalShortcutConfig: {
+      enabled:
+        (before as Partial<PersistableValues_4_14_0>)
+          .telephonyGlobalShortcutConfig?.enabled ?? false,
+      accelerator:
+        (before as Partial<PersistableValues_4_14_0>)
+          .telephonyGlobalShortcutConfig?.accelerator ?? null,
+    },
+  }),
+  '>=4.15.0': (before: PersistableValues_4_14_0): PersistableValues_4_15_0 => ({
+    ...before,
+    e2ePdfPreviewSizeLimit: DEFAULT_E2E_PDF_PREVIEW_SIZE_LIMIT_MB,
+  }),
+  '>=4.16.0': (before: PersistableValues_4_15_0): PersistableValues_4_16_0 => ({
+    ...before,
+    navigationLayout:
+      (before as Partial<PersistableValues_4_16_0>).navigationLayout ?? 'tabs',
+  }),
+  '>=4.16.1': (before: PersistableValues_4_16_0): PersistableValues_4_16_1 => ({
+    ...before,
+    isDownloadsPercentageEnabled: false,
+  }),
+  '>=4.16.2': (before: PersistableValues_4_16_1): PersistableValues_4_16_2 => {
+    // electron-store only runs this when projectVersion satisfies >=4.16.2.
+    // mergePersistableValues also applies the same revision for builds that
+    // ship the policy before that version bump (see MENU_BAR_DEFAULT_REVISION).
+    if (process.platform === 'darwin') {
+      return {
+        ...before,
+        menuBarDefaultRevision: MENU_BAR_DEFAULT_REVISION,
+      };
+    }
+    return {
+      ...before,
+      isMenuBarEnabled: false,
+      menuBarDefaultRevision: MENU_BAR_DEFAULT_REVISION,
+    };
+  },
 };

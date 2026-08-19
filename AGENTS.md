@@ -1,4 +1,4 @@
-# Development Guidelines for Rocket.Chat.Electron
+# Development Guidelines for Snacka.Electron
 
 ## Quick Reference
 
@@ -284,6 +284,24 @@ Each worktree has its own working directory, branch, build outputs, and node_mod
 - **Always verify before using** - check official docs and type definitions
 - For TypeScript: check `.d.ts` files in `node_modules/@package-name/dist/`
 - Never assume prop values, tokens, or API endpoints work without verification
+
+---
+
+## QA Flow Authoring
+
+QA-underlaget under `qa/` kommer från uppströms Rocket.Chat.Electron. Läs
+`qa/README.md`, `qa/AGENTS.md` och `qa/flow-template.md` innan du skapar
+eller uppdaterar flöden, och validera med:
+
+```sh
+node qa/scripts/validate-flows.mjs qa/<pack>
+node qa/scripts/export-qase-csv.mjs qa/<pack>
+```
+
+Flöden ska kunna köras av någon som inte känner till funktionen. Härled varje
+användarsynligt steg från implementationen — ändrade React-komponenter,
+Fuselage-ikoner, i18n-etiketter, meny- och modaldefinitioner, plattformsgrenar
+och tester — inte från produktintuition.
 
 ---
 

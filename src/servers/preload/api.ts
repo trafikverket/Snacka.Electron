@@ -14,16 +14,22 @@ import {
   clearOutlookCredentials,
   setUserToken,
 } from '../../outlookCalendar/preload';
+import { onTelephonyCallRequested } from '../../telephony/preload';
 import { setUserPresenceDetection } from '../../userPresence/preload';
 import { setBadge } from './badge';
 import { writeTextToClipboard } from './clipboard';
-import { openDocumentViewer } from './documentViewer';
+import {
+  openDocumentViewer,
+  supportedDocumentViewerFormats,
+} from './documentViewer';
+import { getE2ePdfPreviewSizeLimit } from './e2ePdfPreviewSizeLimit';
 import { setFavicon } from './favicon';
 import { setGitCommitHash } from './gitCommitHash';
 import {
   getInternalVideoChatWindowEnabled,
   openInternalVideoChatWindow,
 } from './internalVideoChatWindow';
+import { onNavigateToRoute } from './navigateToRoute';
 import { openInBrowser } from './openInBrowser';
 import { reloadServer } from './reloadServer';
 import {
@@ -35,6 +41,8 @@ import { setUserThemeAppearance } from './themeAppearance';
 import { setTitle } from './title';
 import { setUrlResolver } from './urls';
 import { setUserLoggedIn } from './userLoggedIn';
+import { setUserRoles } from './userRoles';
+import { setVersion } from './version';
 
 type ServerInfo = {
   version: string;
@@ -49,6 +57,13 @@ type ExtendedIRocketChatDesktop = IRocketChatDesktop & {
   ) => Promise<unknown>;
   closeCustomNotification: (id: unknown) => void;
   openInBrowser: (url: string) => void;
+  getE2ePdfPreviewSizeLimit: () => number;
+  onTelephonyCallRequested: (
+    callback: (payload: { phoneNumber: string; rawUri: string }) => void
+  ) => void;
+  supportedDocumentViewerFormats: () => string[];
+  onNavigateToRoute: (callback: (path: string) => void) => void;
+  setUserRoles: (roles: string[]) => void;
 };
 
 declare global {
@@ -69,6 +84,7 @@ export const RocketChatDesktop: Window['RocketChatDesktop'] = {
     serverInfo = _serverInfo;
     cb(_serverInfo);
     setServerVersionToSidebar(_serverInfo.version);
+    setVersion(_serverInfo.version);
   },
   setUrlResolver,
   setBadge,
@@ -77,6 +93,7 @@ export const RocketChatDesktop: Window['RocketChatDesktop'] = {
   setTitle,
   setUserPresenceDetection,
   setUserLoggedIn,
+  setUserRoles,
   setUserThemeAppearance,
   createNotification,
   destroyNotification,
@@ -93,6 +110,10 @@ export const RocketChatDesktop: Window['RocketChatDesktop'] = {
   setUserToken,
   setSidebarCustomTheme,
   openDocumentViewer,
+  supportedDocumentViewerFormats,
   openInBrowser,
   reloadServer,
+  getE2ePdfPreviewSizeLimit,
+  onTelephonyCallRequested,
+  onNavigateToRoute,
 };

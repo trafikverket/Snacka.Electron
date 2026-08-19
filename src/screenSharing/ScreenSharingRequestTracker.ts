@@ -1,9 +1,27 @@
 import type { Event } from 'electron';
 import { desktopCapturer, ipcMain } from 'electron';
 
+import { getCachedSources } from './desktopCapturerCache';
 import type { DisplayMediaCallback } from './screenPicker/types';
 
 const DEFAULT_TIMEOUT = 60000;
+
+type CreateRequestOptions = {
+  isStillValid?: () => boolean;
+  onDone?: () => void;
+};
+
+type ScreenSharingRequestHandle = {
+  cancel: () => void;
+};
+
+type QueueEntry = {
+  requestId: string;
+  cb: DisplayMediaCallback;
+  sendOpenPicker: () => void;
+  options?: CreateRequestOptions;
+  settled: boolean;
+};
 
 export class ScreenSharingRequestTracker {
   private activeListener:
@@ -12,9 +30,13 @@ export class ScreenSharingRequestTracker {
 
   private activeRequestId: string | null = null;
 
+  private activeEntry: QueueEntry | null = null;
+
   private timeout: NodeJS.Timeout | null = null;
 
   private isPending = false;
+
+  private queue: QueueEntry[] = [];
 
   constructor(
     private readonly responseChannel: string,
@@ -33,8 +55,27 @@ export class ScreenSharingRequestTracker {
       this.timeout = null;
     }
 
+    const active = this.activeEntry;
     this.activeRequestId = null;
+    this.activeEntry = null;
     this.isPending = false;
+
+    if (active && !active.settled) {
+      active.settled = true;
+      active.cb(null);
+      active.options?.onDone?.();
+    }
+
+    const drained = this.queue;
+    this.queue = [];
+    drained.forEach((entry) => {
+      if (entry.settled) {
+        return;
+      }
+      entry.settled = true;
+      entry.cb(null);
+      entry.options?.onDone?.();
+    });
   }
 
   private removeListenerOnly(): void {
@@ -51,6 +92,7 @@ export class ScreenSharingRequestTracker {
 
   private markComplete(): void {
     this.activeRequestId = null;
+    this.activeEntry = null;
     this.isPending = false;
   }
 
@@ -58,43 +100,92 @@ export class ScreenSharingRequestTracker {
     return this.isPending;
   }
 
-  createRequest(cb: DisplayMediaCallback, sendOpenPicker: () => void): void {
-    if (this.isPending) {
-      console.warn(`${this.label}: request already pending, ignoring`);
-      cb({ video: false } as any);
+  private finishActive(entry: QueueEntry): void {
+    this.markComplete();
+    entry.settled = true;
+    entry.options?.onDone?.();
+    this.processNext();
+  }
+
+  private cancelActiveEntry(entry: QueueEntry): void {
+    this.removeListenerOnly();
+    this.markComplete();
+    entry.settled = true;
+    entry.cb(null);
+    entry.options?.onDone?.();
+  }
+
+  private processNext(): void {
+    const entry = this.queue.shift();
+    if (!entry) {
       return;
     }
 
-    this.cleanup();
+    if (entry.options?.isStillValid && !entry.options.isStillValid()) {
+      entry.settled = true;
+      entry.cb(null);
+      entry.options?.onDone?.();
+      this.processNext();
+      return;
+    }
 
-    const requestId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    this.startRequest(entry);
+  }
+
+  private startRequest(entry: QueueEntry): void {
+    this.removeListenerOnly();
+
+    const { requestId } = entry;
     this.activeRequestId = requestId;
+    this.activeEntry = entry;
     this.isPending = true;
-
-    let callbackInvoked = false;
 
     const listener = async (_event: Event, sourceId: string | null) => {
       if (this.activeRequestId !== requestId) {
         return;
       }
 
-      if (callbackInvoked) {
+      if (entry.settled) {
         return;
       }
-      callbackInvoked = true;
 
       this.removeListenerOnly();
-      this.markComplete();
 
       if (!sourceId) {
-        cb({ video: false } as any);
+        entry.cb(null);
+        this.finishActive(entry);
         return;
       }
 
       try {
+        const cachedSources = getCachedSources();
+
+        if (cachedSources.length > 0) {
+          const selectedSource = cachedSources.find((s) => s.id === sourceId);
+
+          if (!selectedSource) {
+            console.warn(
+              `${this.label}: selected source no longer available:`,
+              sourceId
+            );
+            entry.cb(null);
+            this.finishActive(entry);
+            return;
+          }
+
+          entry.cb({ video: selectedSource });
+          this.finishActive(entry);
+          return;
+        }
+
+        // Cache is empty: fall back to a single direct enumeration attempt.
         const sources = await desktopCapturer.getSources({
           types: ['window', 'screen'],
         });
+
+        if (entry.settled) {
+          return;
+        }
 
         const selectedSource = sources.find((s) => s.id === sourceId);
 
@@ -103,14 +194,21 @@ export class ScreenSharingRequestTracker {
             `${this.label}: selected source no longer available:`,
             sourceId
           );
-          cb({ video: false } as any);
+          entry.cb(null);
+          this.finishActive(entry);
           return;
         }
 
-        cb({ video: selectedSource });
+        entry.cb({ video: selectedSource });
+        this.finishActive(entry);
       } catch (error) {
+        if (entry.settled) {
+          return;
+        }
+
         console.error(`${this.label}: error validating source:`, error);
-        cb({ video: false } as any);
+        entry.cb(null);
+        this.finishActive(entry);
       }
     };
 
@@ -121,18 +219,78 @@ export class ScreenSharingRequestTracker {
         return;
       }
 
-      if (callbackInvoked) {
+      if (entry.settled) {
         return;
       }
-      callbackInvoked = true;
 
       console.warn(`${this.label}: request timed out, cleaning up`);
       this.removeListenerOnly();
-      this.markComplete();
-      cb({ video: false } as any);
+      entry.cb(null);
+      this.finishActive(entry);
     }, this.timeoutMs);
 
     ipcMain.once(this.responseChannel, listener);
-    sendOpenPicker();
+    entry.sendOpenPicker();
+  }
+
+  createRequest(
+    cb: DisplayMediaCallback,
+    sendOpenPicker: () => void,
+    options?: CreateRequestOptions
+  ): ScreenSharingRequestHandle {
+    const requestId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+    const entry: QueueEntry = {
+      requestId,
+      cb,
+      sendOpenPicker,
+      options,
+      settled: false,
+    };
+
+    if (this.isPending) {
+      this.queue.push(entry);
+    } else {
+      this.cleanup();
+      this.startRequest(entry);
+    }
+
+    return {
+      cancel: () => {
+        if (entry.settled) {
+          return;
+        }
+
+        if (this.activeEntry === entry) {
+          this.cancelActiveEntry(entry);
+          this.processNext();
+          return;
+        }
+
+        const index = this.queue.indexOf(entry);
+        if (index !== -1) {
+          this.queue.splice(index, 1);
+          entry.settled = true;
+          entry.cb(null);
+          entry.options?.onDone?.();
+        }
+      },
+    };
+  }
+
+  cancelAll(): void {
+    if (this.activeEntry && !this.activeEntry.settled) {
+      this.cancelActiveEntry(this.activeEntry);
+    }
+
+    const drained = this.queue;
+    this.queue = [];
+    drained.forEach((entry) => {
+      if (entry.settled) {
+        return;
+      }
+      entry.settled = true;
+      entry.cb(null);
+      entry.options?.onDone?.();
+    });
   }
 }

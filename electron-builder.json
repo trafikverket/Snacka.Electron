@@ -5,15 +5,28 @@
   ],
   "extraResources": [
     "build/icon.ico",
+    {
+      "from": "build/SnackaDefaultAppAssociations.xml",
+      "to": "SnackaDefaultAppAssociations.xml"
+    },
     "servers.json"
   ],
   "appId": "se.trafikverket.snacka",
-  "protocols": {
-    "name": "Snacka",
-    "schemes": [
-      "snacka"
-    ]
-  },
+  "protocols": [
+    {
+      "name": "Snacka",
+      "schemes": [
+        "snacka"
+      ]
+    },
+    {
+      "name": "Snacka Telephony",
+      "schemes": [
+        "callto",
+        "tel"
+      ]
+    }
+  ],
   "afterPack": "./build/afterPack.js",
   "mac": {
     "category": "public.app-category.productivity",
@@ -22,7 +35,7 @@
       "zip"
     ],
     "icon": "build/icon.icns",
-    "bundleVersion": "26050",
+    "bundleVersion": "26080",
     "helperBundleId": "se.trafikverket.snacka.helper",
     "type": "distribution",
     "artifactName": "snacka-${version}-${os}.${ext}",
@@ -145,7 +158,8 @@
         "Name": "Snacka",
         "Comment": "Desktop-klient för Snacka",
         "GenericName": "Snacka",
-        "Categories": "GNOME;GTK;Network;InstantMessaging"
+        "Categories": "GNOME;GTK;Network;InstantMessaging",
+        "MimeType": "x-scheme-handler/snacka;x-scheme-handler/callto;x-scheme-handler/tel;"
       }
     },
     "artifactName": "snacka-${version}-${os}-${arch}.${ext}"

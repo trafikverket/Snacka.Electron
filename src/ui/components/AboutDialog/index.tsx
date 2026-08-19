@@ -1,9 +1,11 @@
+import { css } from '@rocket.chat/css-in-js';
 import {
   Box,
   Button,
   Field,
   FieldLabel,
   FieldRow,
+  Icon,
   Margins,
   Throbber,
   ToggleSwitch,
@@ -18,7 +20,10 @@ import type { Dispatch } from 'redux';
 import { packageJsonInformation } from '../../../app/main/app';
 import type { RootAction } from '../../../store/actions';
 import type { RootState } from '../../../store/rootReducer';
-import { UPDATES_CHECK_FOR_UPDATES_REQUESTED } from '../../../updates/actions';
+import {
+  UPDATES_CHECK_FOR_UPDATES_REQUESTED,
+  UPDATES_PANEL_TOGGLED,
+} from '../../../updates/actions';
 import { UPDATE_CHANNELS } from '../../../updates/common';
 import {
   ABOUT_DIALOG_TOGGLE_UPDATE_ON_START,
@@ -31,6 +36,51 @@ import { RocketChatLogo } from '../RocketChatLogo';
 const copyright = `© 2016-${new Date().getFullYear()}, ${
   packageJsonInformation.productName
 }`;
+
+/**
+ * The About dialog renders inside a native `<dialog>` opened with
+ * `showModal()` (top layer). Fuselage's modern `Select` portals its dropdown
+ * to `document.body`, which sits below the top-layer dialog, so it cannot be
+ * used here (see docs/KNOWN_ISSUES.md). A native `<select>` works because its
+ * dropdown is browser-native; we style it with Fuselage color/radius tokens so
+ * it stays theme-correct. Dimensions are literal rems (no `--rcx-spacing`
+ * custom property exists for raw CSS), matching the x* scale.
+ */
+const updateChannelSelectClass = css`
+  width: 13.75rem;
+  height: 2.5rem;
+  padding-block: 0.5rem;
+  padding-inline: 0.75rem 2.5rem;
+  border: 1px solid var(--rcx-color-stroke-light);
+  border-radius: var(--rcx-border-radius-medium);
+  background-color: var(--rcx-color-surface-tint);
+  color: var(--rcx-color-font-default);
+  font: inherit;
+  outline: 0;
+  cursor: pointer;
+  appearance: none;
+
+  &:focus {
+    border-color: var(--rcx-color-stroke-highlight);
+  }
+
+  & option {
+    color: var(--rcx-color-font-default);
+    background-color: var(--rcx-color-surface-tint);
+  }
+`;
+
+const updateChannelWrapperClass = css`
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+
+  & > .rcx-icon {
+    position: absolute;
+    right: 0.75rem;
+    pointer-events: none;
+  }
+`;
 
 export const AboutDialog = () => {
   const appVersion = useSelector(({ appVersion }: RootState) => appVersion);
@@ -99,9 +149,20 @@ export const AboutDialog = () => {
       return undefined;
     }
 
+    // The titlebar update label owns the install flow from here on, so report
+    // the finding inline instead of handing over to a modal.
     if (newUpdateVersion) {
-      setCheckingForUpdates([false, null]);
-      return undefined;
+      setCheckingForUpdates([
+        true,
+        t('dialog.about.updateAvailable', { version: newUpdateVersion }),
+      ]);
+      const messageTimer = setTimeout(() => {
+        setCheckingForUpdates([false, null]);
+      }, 5000);
+
+      return () => {
+        clearTimeout(messageTimer);
+      };
     }
 
     setCheckingForUpdates([true, t('dialog.about.noUpdatesAvailable')]);
@@ -114,7 +175,31 @@ export const AboutDialog = () => {
     };
   }, [updateError, isCheckingForUpdates, newUpdateVersion, t]);
 
+  // Set while a check started from this dialog is in flight, so only a manual
+  // check hands over to the titlebar panel.
+  const [hasRequestedCheck, setHasRequestedCheck] = useState(false);
+
+  useEffect(() => {
+    if (!isVisible) {
+      setHasRequestedCheck(false);
+    }
+  }, [isVisible]);
+
+  // A manual check that finds an update hands over to the titlebar update
+  // panel: close this dialog and open the panel, so the version details and the
+  // install action live in exactly one place.
+  useEffect(() => {
+    if (!hasRequestedCheck || isCheckingForUpdates || !newUpdateVersion) {
+      return;
+    }
+
+    setHasRequestedCheck(false);
+    dispatch({ type: ABOUT_DIALOG_DISMISSED });
+    dispatch({ type: UPDATES_PANEL_TOGGLED, payload: true });
+  }, [hasRequestedCheck, isCheckingForUpdates, newUpdateVersion, dispatch]);
+
   const handleCheckForUpdatesButtonClick = (): void => {
+    setHasRequestedCheck(true);
     dispatch({ type: UPDATES_CHECK_FOR_UPDATES_REQUESTED });
   };
 
@@ -136,6 +221,7 @@ export const AboutDialog = () => {
 
   const checkForUpdatesButtonRef = useAutoFocus(isVisible);
   const checkForUpdatesOnStartupToggleSwitchId = useId();
+  const updateChannelSelectId = useId();
 
   const updateChannelOptions = UPDATE_CHANNELS.map(
     (channel) =>
@@ -162,47 +248,33 @@ export const AboutDialog = () => {
         {canUpdate && (
           <Box display='flex' flexDirection='column'>
             {isDeveloperModeEnabled && (
-              <Box marginBlockEnd={16}>
+              <Box mbe='x16'>
                 <Field>
-                  <FieldRow style={{ verticalAlign: 'middle' }}>
+                  <FieldRow>
                     <FieldLabel
-                      htmlFor='updateChannelSelect'
-                      marginBlock='auto'
+                      htmlFor={updateChannelSelectId}
+                      alignSelf='center'
                     >
                       {t('dialog.about.updateChannel.label')}
                     </FieldLabel>
-                    <select
-                      id='updateChannelSelect'
-                      value={updateChannel}
-                      onChange={(e) =>
-                        handleUpdateChannelChange(e.target.value)
-                      }
-                      style={{
-                        width: '200px',
-                        height: '40px',
-                        padding: '8px 12px',
-                        border: '2px solid #e4e7ea',
-                        borderRadius: '4px',
-                        backgroundColor: '#ffffff',
-                        fontSize: '14px',
-                        color: '#2f343d',
-                        outline: 'none',
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
-                        appearance: 'none',
-                        backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e")`,
-                        backgroundRepeat: 'no-repeat',
-                        backgroundPosition: 'right 12px center',
-                        backgroundSize: '16px',
-                        paddingRight: '40px',
-                      }}
-                    >
-                      {updateChannelOptions.map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
+                    <Box className={updateChannelWrapperClass}>
+                      <Box
+                        is='select'
+                        id={updateChannelSelectId}
+                        className={updateChannelSelectClass}
+                        value={updateChannel}
+                        onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                          handleUpdateChannelChange(e.target.value)
+                        }
+                      >
+                        {updateChannelOptions.map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </Box>
+                      <Icon name='chevron-down' size='x20' color='hint' />
+                    </Box>
                   </FieldRow>
                 </Field>
               </Box>
@@ -212,7 +284,7 @@ export const AboutDialog = () => {
               {!checkingForUpdates && (
                 <Button
                   ref={
-                    checkForUpdatesButtonRef as React.RefObject<HTMLButtonElement>
+                    checkForUpdatesButtonRef as React.RefObject<HTMLButtonElement | null>
                   }
                   primary
                   type='button'
