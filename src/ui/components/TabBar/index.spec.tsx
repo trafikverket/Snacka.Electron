@@ -1,0 +1,518 @@
+import { act } from '@testing-library/react';
+
+import { TabBar } from '.';
+import {
+  SERVER_CONTEXT_MENU_TRIGGERED,
+  SIDE_BAR_ADD_NEW_SERVER_CLICKED,
+  SIDE_BAR_SERVER_SELECTED,
+} from '../../actions';
+import { renderWithStore, screen, userEvent } from '../../test-utils';
+
+// The layout hook debounces ResizeObserver updates through a
+// requestAnimationFrame. With fake timers installed, flush it right after
+// render so `availableWidth` reflects the mocked tablist width before assertions run.
+const renderTabBar = (
+  ...args: Parameters<typeof renderWithStore>
+): ReturnType<typeof renderWithStore> => {
+  const result = renderWithStore(...args);
+  act(() => {
+    jest.runOnlyPendingTimers();
+  });
+  return result;
+};
+
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: { count?: number }) =>
+      options?.count !== undefined ? `${key}:${options.count}` : key,
+    i18n: { language: 'en', changeLanguage: jest.fn() },
+  }),
+  Trans: ({ children }: { children: React.ReactNode }) => children,
+  initReactI18next: { type: '3rdParty', init: () => {} },
+}));
+
+const mockDispatch = jest.fn();
+
+jest.mock('../../../store', () => ({
+  dispatch: (action: unknown) => mockDispatch(action),
+}));
+
+let mockTabListWidth = 1000;
+
+class MockResizeObserver {
+  callback: ResizeObserverCallback;
+
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback;
+  }
+
+  observe(target: Element) {
+    this.callback(
+      [
+        {
+          target,
+          contentRect: { width: mockTabListWidth } as DOMRectReadOnly,
+        } as ResizeObserverEntry,
+      ],
+      this as unknown as ResizeObserver
+    );
+  }
+
+  unobserve() {}
+
+  disconnect() {}
+}
+
+const buildState = (overrides: Record<string, unknown> = {}) =>
+  ({
+    servers: [
+      { url: 'https://a.rocket.chat/', title: 'Server A' },
+      { url: 'https://b.rocket.chat/', title: 'Server B' },
+    ],
+    currentView: { url: 'https://a.rocket.chat/' },
+    isAddNewServersEnabled: true,
+    isTransparentWindowEnabled: false,
+    rootWindowState: { fullscreen: false },
+    ...overrides,
+  }) as any;
+
+describe('TabBar', () => {
+  const originalResizeObserver = (global as any).ResizeObserver;
+
+  beforeAll(() => {
+    (global as any).ResizeObserver = MockResizeObserver;
+  });
+
+  afterAll(() => {
+    (global as any).ResizeObserver = originalResizeObserver;
+  });
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockDispatch.mockClear();
+    mockTabListWidth = 1000;
+  });
+
+  afterEach(() => {
+    jest.runOnlyPendingTimers();
+    jest.useRealTimers();
+  });
+
+  it('renders one tab per server', () => {
+    renderTabBar(<TabBar />, { preloadedState: buildState() });
+
+    expect(screen.getByText('Server A')).toBeInTheDocument();
+    expect(screen.getByText('Server B')).toBeInTheDocument();
+  });
+
+  it('marks the active server tab as selected', () => {
+    renderTabBar(<TabBar />, { preloadedState: buildState() });
+
+    const tabs = screen.getAllByRole('tab');
+    const selected = tabs.filter(
+      (tab) => tab.getAttribute('aria-selected') === 'true'
+    );
+    expect(selected).toHaveLength(1);
+    expect(selected[0]).toHaveTextContent('Server A');
+  });
+
+  it('dispatches SIDE_BAR_SERVER_SELECTED with the url when a tab is clicked', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    renderTabBar(<TabBar />, { preloadedState: buildState() });
+
+    await user.click(screen.getByText('Server B'));
+
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: SIDE_BAR_SERVER_SELECTED,
+      payload: 'https://b.rocket.chat/',
+    });
+  });
+
+  it('dispatches SIDE_BAR_ADD_NEW_SERVER_CLICKED when the add button is clicked', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    renderTabBar(<TabBar />, { preloadedState: buildState() });
+
+    await user.click(screen.getByTitle('tabBar.addWorkspace'));
+
+    expect(mockDispatch).toHaveBeenCalledWith({
+      type: SIDE_BAR_ADD_NEW_SERVER_CLICKED,
+    });
+  });
+
+  it('hides the add button when adding servers is disabled', () => {
+    renderTabBar(<TabBar />, {
+      preloadedState: buildState({ isAddNewServersEnabled: false }),
+    });
+
+    expect(screen.queryByTitle('tabBar.addWorkspace')).not.toBeInTheDocument();
+  });
+
+  it('caps the unread mention badge display at 99+', () => {
+    renderTabBar(<TabBar />, {
+      preloadedState: buildState({
+        servers: [
+          {
+            url: 'https://a.rocket.chat/',
+            title: 'Server A',
+            badge: 150,
+            userLoggedIn: true,
+          },
+        ],
+      }),
+    });
+
+    expect(screen.getByText('99+')).toBeInTheDocument();
+  });
+
+  it('shows the unread dot for a server with unread messages but no mention count', () => {
+    const { container } = renderTabBar(<TabBar />, {
+      preloadedState: buildState({
+        servers: [
+          {
+            url: 'https://a.rocket.chat/',
+            title: 'Server A',
+            badge: '•',
+            userLoggedIn: true,
+          },
+        ],
+      }),
+    });
+
+    const badges = container.querySelectorAll('.rcx-badge');
+    expect(badges).toHaveLength(1);
+    expect(badges[0]).toHaveTextContent('');
+  });
+
+  it('renders the unread indicator as the 8px ball in horizontal mode and the full badge in vertical mode', () => {
+    const server = {
+      url: 'https://a.rocket.chat/',
+      title: 'Server A',
+      badge: '•' as const,
+      userLoggedIn: true,
+    };
+
+    const horizontal = renderTabBar(<TabBar />, {
+      preloadedState: buildState({ servers: [server] }),
+    });
+    const horizontalBadge = horizontal.container.querySelector('.rcx-badge');
+    expect(horizontalBadge).not.toBeNull();
+    expect(getComputedStyle(horizontalBadge as Element).width).toBe('8px');
+    horizontal.unmount();
+
+    const vertical = renderTabBar(<TabBar orientation='vertical' />, {
+      preloadedState: buildState({ servers: [server] }),
+    });
+    const verticalBadge = vertical.container.querySelector('.rcx-badge');
+    expect(verticalBadge).not.toBeNull();
+    // The vertical indicator keeps the standard badge box (Fuselage's own
+    // 1rem minimum, not loaded in this environment) instead of the 8px ball.
+    expect(getComputedStyle(verticalBadge as Element).width).not.toBe('8px');
+  });
+
+  it('shows only the login warning when a logged-out server also has unread messages', () => {
+    const { container } = renderTabBar(<TabBar />, {
+      preloadedState: buildState({
+        servers: [
+          {
+            url: 'https://a.rocket.chat/',
+            title: 'Server A',
+            badge: '•',
+            userLoggedIn: false,
+          },
+        ],
+      }),
+    });
+
+    const badges = container.querySelectorAll('.rcx-badge');
+    expect(badges).toHaveLength(1);
+    expect(badges[0]).toHaveTextContent('!');
+  });
+
+  it('shows the mention count instead of the unread dot when the badge is a number', () => {
+    const { container } = renderTabBar(<TabBar />, {
+      preloadedState: buildState({
+        servers: [
+          {
+            url: 'https://a.rocket.chat/',
+            title: 'Server A',
+            badge: 3,
+            userLoggedIn: true,
+          },
+        ],
+      }),
+    });
+
+    const badges = container.querySelectorAll('.rcx-badge');
+    expect(badges).toHaveLength(1);
+    expect(badges[0]).toHaveTextContent('3');
+  });
+
+  it('renders initials as a fallback when there is no favicon', () => {
+    renderTabBar(<TabBar />, {
+      preloadedState: buildState({
+        servers: [{ url: 'https://a.rocket.chat/', title: 'Server A' }],
+      }),
+    });
+
+    expect(screen.getByText('SA')).toBeInTheDocument();
+  });
+
+  it('triggers the native server context menu on right click', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    renderTabBar(<TabBar />, { preloadedState: buildState() });
+
+    const tab = screen
+      .getByText('Server A')
+      .closest('[role="tab"]') as HTMLElement;
+    expect(tab).not.toBeNull();
+
+    await user.pointer({ keys: '[MouseRight]', target: tab });
+
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: SERVER_CONTEXT_MENU_TRIGGERED,
+        payload: expect.objectContaining({ url: 'https://a.rocket.chat/' }),
+      })
+    );
+  });
+
+  it('renders with zero servers without crashing', () => {
+    renderTabBar(<TabBar />, {
+      preloadedState: buildState({
+        servers: [],
+        currentView: 'add-new-server',
+      }),
+    });
+
+    expect(screen.getByRole('tablist')).toBeInTheDocument();
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+  });
+
+  it('moves focus to the next tab on ArrowRight', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    renderTabBar(<TabBar />, { preloadedState: buildState() });
+
+    const tabs = screen.getAllByRole('tab');
+    tabs[0].focus();
+    expect(tabs[0]).toHaveFocus();
+
+    await user.keyboard('{ArrowRight}');
+
+    expect(tabs[1]).toHaveFocus();
+  });
+
+  it('falls back tabindex to the first tab when no server is selected', () => {
+    renderTabBar(<TabBar />, {
+      preloadedState: buildState({ currentView: 'settings' }),
+    });
+
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs[0]).toHaveAttribute('tabindex', '0');
+    expect(tabs[1]).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('shows a warning badge for logged-out servers', () => {
+    renderTabBar(<TabBar />, {
+      preloadedState: buildState({
+        servers: [
+          {
+            url: 'https://a.rocket.chat/',
+            title: 'Server A',
+            userLoggedIn: false,
+          },
+        ],
+      }),
+    });
+
+    expect(screen.getByText('!')).toBeInTheDocument();
+  });
+
+  it('renders more tabs when the add button is disabled', () => {
+    mockTabListWidth = 130;
+
+    const servers = [
+      { url: 'https://a.rocket.chat/', title: 'Server A' },
+      { url: 'https://b.rocket.chat/', title: 'Server B' },
+      { url: 'https://c.rocket.chat/', title: 'Server C' },
+    ];
+
+    renderTabBar(<TabBar />, {
+      preloadedState: buildState({
+        servers,
+        isAddNewServersEnabled: false,
+      }),
+    });
+
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+  });
+
+  it('hugs tab content instead of stretching to fill the strip', () => {
+    renderTabBar(<TabBar />, {
+      preloadedState: buildState({
+        servers: [{ url: 'https://a.rocket.chat/', title: 'Server A' }],
+      }),
+    });
+
+    const tab = screen.getByText('Server A').closest('[role="tab"]');
+    expect(tab).toHaveStyle({
+      flex: '0 1 auto',
+      minWidth: '52px',
+      maxWidth: '235px',
+    });
+  });
+
+  it('shows the workspace name label when the strip has room', () => {
+    renderTabBar(<TabBar />, {
+      preloadedState: buildState({
+        servers: [{ url: 'https://a.rocket.chat/', title: 'Server A' }],
+      }),
+    });
+
+    expect(screen.getByText('Server A')).toBeInTheDocument();
+  });
+
+  it('hides the label and shortcut chip when the strip is crowded (compact mode)', () => {
+    // 190px fits all 3 tabs at their 52px minimum (no slicing by
+    // computeVisibleServers) but sits below the 3 * (64 + gap) compact threshold.
+    mockTabListWidth = 190;
+
+    renderTabBar(<TabBar />, {
+      preloadedState: buildState({
+        servers: [
+          { url: 'https://a.rocket.chat/', title: 'Server A' },
+          { url: 'https://b.rocket.chat/', title: 'Server B' },
+          { url: 'https://c.rocket.chat/', title: 'Server C' },
+        ],
+        isAddNewServersEnabled: false,
+      }),
+    });
+
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
+    expect(screen.queryByText('Server A')).not.toBeInTheDocument();
+    expect(screen.queryByText('Server B')).not.toBeInTheDocument();
+    expect(screen.queryByText('Server C')).not.toBeInTheDocument();
+  });
+
+  it('keeps the add button reachable and clickable within the draggable strip', async () => {
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
+    renderTabBar(<TabBar />, { preloadedState: buildState() });
+
+    const addButton = screen.getByTitle('tabBar.addWorkspace');
+    expect(addButton).toBeInTheDocument();
+
+    await user.click(addButton);
+    expect(mockDispatch).toHaveBeenCalled();
+  });
+
+  it('renders a non-shrinking, pill-shaped badge for two-digit mention counts', () => {
+    renderTabBar(<TabBar />, {
+      preloadedState: buildState({
+        servers: [
+          {
+            url: 'https://a.rocket.chat/',
+            title: 'Server A',
+            badge: 97,
+            userLoggedIn: true,
+          },
+        ],
+      }),
+    });
+
+    const badge = screen.getByText('97');
+    expect(badge).toHaveStyle({ flexShrink: '0' });
+  });
+
+  describe('vertical orientation', () => {
+    it('stacks every server without labels even in a narrow column', () => {
+      // A width that would slice the horizontal strip down to a single tab must
+      // not affect the fixed-width vertical column.
+      mockTabListWidth = 44;
+
+      renderTabBar(<TabBar orientation='vertical' />, {
+        preloadedState: buildState({
+          servers: [
+            { url: 'https://a.rocket.chat/', title: 'Server A' },
+            { url: 'https://b.rocket.chat/', title: 'Server B' },
+            { url: 'https://c.rocket.chat/', title: 'Server C' },
+          ],
+        }),
+      });
+
+      expect(screen.getAllByRole('tab')).toHaveLength(3);
+      expect(screen.queryByText('Server A')).not.toBeInTheDocument();
+      expect(screen.queryByText('Server B')).not.toBeInTheDocument();
+    });
+
+    it('marks the tablist as vertically oriented', () => {
+      renderTabBar(<TabBar orientation='vertical' />, {
+        preloadedState: buildState(),
+      });
+
+      expect(screen.getByRole('tablist')).toHaveAttribute(
+        'aria-orientation',
+        'vertical'
+      );
+    });
+
+    it('still renders the mention badge (floated) in vertical mode', () => {
+      renderTabBar(<TabBar orientation='vertical' />, {
+        preloadedState: buildState({
+          servers: [
+            {
+              url: 'https://a.rocket.chat/',
+              title: 'Server A',
+              badge: 5,
+              userLoggedIn: true,
+            },
+          ],
+        }),
+      });
+
+      expect(screen.getByText('5')).toBeInTheDocument();
+    });
+
+    // Every badge — the unread '•' dot, the '!' warning, a wider mention
+    // count — must share one centre point so size and variant never change
+    // where the badge appears. An edge-anchored wrapper would let width leak
+    // into placement and shift narrower badges off the others' centre.
+    it('centres every badge on the same point regardless of size or variant', () => {
+      const getWrapperOffsets = (badgeProps: Record<string, unknown>) => {
+        const { unmount } = renderTabBar(<TabBar orientation='vertical' />, {
+          preloadedState: buildState({
+            servers: [
+              {
+                url: 'https://a.rocket.chat/',
+                title: 'Server A',
+                ...badgeProps,
+              },
+            ],
+          }),
+        });
+
+        const tab = screen.getByRole('tab');
+        const wrapper = tab.querySelector('div');
+        const style = wrapper ? getComputedStyle(wrapper) : null;
+        const offsets = {
+          top: style?.top,
+          left: style?.left,
+        };
+
+        unmount();
+        return offsets;
+      };
+
+      const dot = getWrapperOffsets({ badge: '•', userLoggedIn: true });
+      const warning = getWrapperOffsets({ userLoggedIn: false });
+      const mentionCount = getWrapperOffsets({ badge: 42, userLoggedIn: true });
+
+      // The anchor is declared in px and paired with translate(-50%, -50%), so
+      // an identical top/left across variants means an identical centre. (jsdom
+      // resolves the percentage transform against each badge's measured box, so
+      // the declared anchor — not the computed matrix — is what to compare.)
+      expect(dot.top).toBe('4px');
+      expect(dot.left).toBe('28px');
+      expect(warning).toEqual(dot);
+      expect(mentionCount).toEqual(dot);
+    });
+  });
+});

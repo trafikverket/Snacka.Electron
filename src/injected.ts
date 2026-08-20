@@ -28,6 +28,64 @@ const resolveWithExponentialBackoff = <T>(
 const tryRequire = <T = any>(path: string) =>
   resolveWithExponentialBackoff<T>(() => window.require(path));
 
+const BOOT_RECOVERY_ATTEMPTS_KEY = 'rocketChatDesktopBootRecoveryAttempts';
+const MAX_BOOT_RECOVERY_ATTEMPTS = 2;
+
+const getBootRecoveryAttempts = (): number => {
+  try {
+    return (
+      Number(window.sessionStorage.getItem(BOOT_RECOVERY_ATTEMPTS_KEY)) || 0
+    );
+  } catch (error) {
+    return 0;
+  }
+};
+
+// Reloading in place never recovers a wedged webview (stale service worker or
+// cache keeps serving a broken bundle), so recovery goes through
+// reloadServer(), which clears the service worker and cache storage before
+// reloading. The sessionStorage counter survives those reloads and caps the
+// attempts, so a genuinely broken server degrades instead of reload-looping.
+const attemptBootRecovery = (reason: string): void => {
+  const attempts = getBootRecoveryAttempts();
+
+  if (attempts >= MAX_BOOT_RECOVERY_ATTEMPTS) {
+    console.error(
+      `[Rocket.Chat Desktop] ${reason}. Boot recovery attempts exhausted (${attempts}); giving up. Restart the app or use "Reload Clearing Cache" to retry.`
+    );
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      BOOT_RECOVERY_ATTEMPTS_KEY,
+      String(attempts + 1)
+    );
+  } catch (error) {
+    // Without a persisted counter every reload would read zero attempts and
+    // recover again, forever — safer to not recover at all.
+    console.error(
+      `[Rocket.Chat Desktop] ${reason}. Boot recovery is disabled because sessionStorage is unavailable.`
+    );
+    return;
+  }
+
+  console.error(
+    `[Rocket.Chat Desktop] ${reason}. Triggering force reload with cache clear to recover (attempt ${
+      attempts + 1
+    } of ${MAX_BOOT_RECOVERY_ATTEMPTS})...`
+  );
+  window.RocketChatDesktop.reloadServer();
+};
+
+const resetBootRecovery = (): void => {
+  try {
+    window.sessionStorage.removeItem(BOOT_RECOVERY_ATTEMPTS_KEY);
+  } catch (error) {
+    // sessionStorage unavailable; nothing to reset
+  }
+};
+
 let startRetryCount = 0;
 let totalRetryTime = 0;
 const MAX_RETRY_TIME = 30000; // Maximum 30 seconds total retry time
@@ -40,14 +98,9 @@ const start = async () => {
     console.log('[Rocket.Chat Desktop] window.require is not defined');
 
     if (totalRetryTime >= MAX_RETRY_TIME) {
-      console.error(
-        `[Rocket.Chat Desktop] Maximum retry time (${MAX_RETRY_TIME}ms) reached. window.require is still not available.`
+      attemptBootRecovery(
+        `Maximum retry time (${MAX_RETRY_TIME}ms) reached. window.require is still not available`
       );
-      console.log(
-        '[Rocket.Chat Desktop] Triggering force reload with cache clear to recover...'
-      );
-      // Trigger force reload with cache clear to recover
-      window.RocketChatDesktop.reloadServer();
       return;
     }
 
@@ -64,7 +117,14 @@ const start = async () => {
     console.log(
       `[Rocket.Chat Desktop] Inject start - retry ${startRetryCount} in ${actualDelay}ms (total time: ${totalRetryTime}ms)`
     );
-    setTimeout(start, actualDelay);
+    setTimeout(() => {
+      start().catch((error) => {
+        console.error(
+          '[Rocket.Chat Desktop] Injected.ts failed to start:',
+          error
+        );
+      });
+    }, actualDelay);
     return;
   }
 
@@ -72,14 +132,29 @@ const start = async () => {
   startRetryCount = 0;
   totalRetryTime = 0;
 
-  const { Info: serverInfo = {} } = await tryRequire(
-    '/app/utils/rocketchat.info'
-  );
-
-  if (!serverInfo.version) {
-    console.log('[Rocket.Chat Desktop] serverInfo.version is not defined');
+  let serverInfo: any = {};
+  try {
+    ({ Info: serverInfo = {} } = await tryRequire(
+      '/app/utils/rocketchat.info'
+    ));
+  } catch (error) {
+    // window.require exists but the module registry is incomplete — the
+    // webapp boot is wedged (stuck throbber) and only a cache-clearing
+    // reload recovers it.
+    attemptBootRecovery(
+      "Failed to require '/app/utils/rocketchat.info' after retries"
+    );
     return;
   }
+
+  if (!serverInfo.version) {
+    attemptBootRecovery(
+      "Required '/app/utils/rocketchat.info' returned no server version"
+    );
+    return;
+  }
+
+  resetBootRecovery();
 
   console.log('[Rocket.Chat Desktop] Injected.ts serverInfo', serverInfo);
 
@@ -383,6 +458,7 @@ const start = async () => {
   const setupFlags = {
     urlResolver: false,
     badgeUpdates: false,
+    unreadChangedEvent: false,
     faviconUpdates: false,
     jitsiIntegration: false,
     backgroundSettings: false,
@@ -394,6 +470,15 @@ const start = async () => {
     userPresence: false,
   };
 
+  // Per-subscription unread state, accumulated from the
+  // `unread-changed-by-subscription` global event so the badge can reproduce
+  // the server's alert-only "•" indicator. Lives outside setupReactiveFeatures
+  // so it survives the periodic re-invocation below.
+  const unreadSubscriptions = new Map<
+    string,
+    { unread: number; alert?: boolean; unreadAlert?: string }
+  >();
+
   // Setup reactive features that depend on modules (with polling)
   // eslint-disable-next-line complexity
   const setupReactiveFeatures = () => {
@@ -402,12 +487,143 @@ const start = async () => {
       setupFlags.urlResolver = true;
     }
 
-    if (Tracker && Session && !setupFlags.badgeUpdates) {
+    // Pre-7.8.0 only: those servers still publish the badge through the Meteor
+    // Session reactive dict. On 7.8.0+ this key is gone (Session.get('unread')
+    // resolves to undefined) and the global-event path below owns the badge, so
+    // running this autorun there would clear the badge with setBadge(undefined).
+    if (
+      !versionIsGreaterOrEqualsTo(serverInfo.version, '7.8.0') &&
+      Tracker &&
+      Session &&
+      !setupFlags.badgeUpdates
+    ) {
       Tracker.autorun(() => {
         const unread = Session.get('unread');
         window.RocketChatDesktop.setBadge(unread);
       });
       setupFlags.badgeUpdates = true;
+    }
+
+    // Servers >= 7.x removed `unread` from the Meteor Session reactive dict
+    // (RocketChat/Rocket.Chat#36001), which is why the Session autorun above is
+    // gated to pre-7.8.0. Those servers no longer expose the badge through
+    // Meteor at all, but they still broadcast it through two global
+    // CustomEvents on window, mirroring the server's own `useUnread` hook:
+    //   - `unread-changed-by-subscription`: fires per subscription whenever its
+    //     unread-relevant fields change, carrying { rid, unread, alert,
+    //     unreadAlert }. We accumulate these into `unreadSubscriptions` to
+    //     rebuild the alert-only "•" indicator that the numeric count alone
+    //     cannot represent.
+    //   - `unread-changed`: fires on every recompute with the aggregate count.
+    //     We use it as the recompute trigger and the source of truth for the
+    //     numeric total.
+    // The badge value is resolved exactly as the server's `useUnread` does:
+    // a positive count wins, otherwise an alert-only "•", otherwise no badge.
+    // Registered independently of the Meteor modules so it works even when they
+    // never load.
+    if (!setupFlags.unreadChangedEvent) {
+      // `aggregateCount`, when provided, is the authoritative total carried by
+      // the `unread-changed` event. The per-subscription map is incremental and
+      // only sees rooms that changed after the listener attached, so it can
+      // undercount; we prefer the aggregate for the numeric total and use the
+      // map solely to rebuild the alert-only "•" indicator.
+      // Server boot floods this path: the webapp fires one
+      // `unread-changed-by-subscription` event per room when it starts, and
+      // dispatching a badge update for each one storms the root window's
+      // Redux store hard enough that React aborts with "Maximum update depth
+      // exceeded". Recomputes are therefore coalesced into a single
+      // trailing-edge call, and the dispatch is skipped entirely when the
+      // resolved badge value did not change.
+      const BADGE_COALESCE_MS = 100;
+      let resolveBadgeTimer: ReturnType<typeof setTimeout> | null = null;
+      let pendingAggregateCount: number | undefined;
+      let lastSentBadge: number | '•' | undefined;
+      let hasSentBadge = false;
+
+      const resolveBadge = (aggregateCount?: number): void => {
+        let unreadCount = 0;
+        let alertIndicator: '•' | undefined;
+
+        // The user's `unreadAlert` preference only influences rooms left on the
+        // default. No global event carries it, so we read it from the Meteor
+        // user document when available and fall back to the server's shipped
+        // default of `true`.
+        const unreadAlertEnabled =
+          Meteor?.user?.()?.settings?.preferences?.unreadAlert ?? true;
+
+        for (const subscription of unreadSubscriptions.values()) {
+          const { unread, alert, unreadAlert } = subscription;
+          if (alert || unread > 0) {
+            if (
+              alert === true &&
+              unreadAlert !== 'nothing' &&
+              (unreadAlert === 'all' || unreadAlertEnabled !== false)
+            ) {
+              alertIndicator = '•';
+            }
+            unreadCount += unread;
+          }
+        }
+
+        const total =
+          aggregateCount !== undefined && aggregateCount > unreadCount
+            ? aggregateCount
+            : unreadCount;
+
+        const badge = total > 0 ? total : alertIndicator ?? 0;
+        if (hasSentBadge && badge === lastSentBadge) {
+          return;
+        }
+        hasSentBadge = true;
+        lastSentBadge = badge;
+        window.RocketChatDesktop.setBadge(badge);
+      };
+
+      const scheduleResolveBadge = (aggregateCount?: number): void => {
+        if (aggregateCount !== undefined) {
+          pendingAggregateCount = aggregateCount;
+        }
+        if (resolveBadgeTimer !== null) {
+          return;
+        }
+        resolveBadgeTimer = setTimeout(() => {
+          resolveBadgeTimer = null;
+          const aggregate = pendingAggregateCount;
+          pendingAggregateCount = undefined;
+          resolveBadge(aggregate);
+        }, BADGE_COALESCE_MS);
+      };
+
+      window.addEventListener('unread-changed-by-subscription', (event) => {
+        const subscription = (
+          event as CustomEvent<{
+            rid?: string;
+            unread?: number;
+            alert?: boolean;
+            unreadAlert?: string;
+          }>
+        ).detail;
+        if (!subscription?.rid) {
+          return;
+        }
+        unreadSubscriptions.set(subscription.rid, {
+          unread: subscription.unread ?? 0,
+          alert: subscription.alert,
+          unreadAlert: subscription.unreadAlert,
+        });
+        scheduleResolveBadge();
+      });
+
+      window.addEventListener('unread-changed', (event) => {
+        const { detail } = event as CustomEvent<number | undefined>;
+        const aggregateCount =
+          typeof detail === 'number' && Number.isFinite(detail)
+            ? detail
+            : undefined;
+        scheduleResolveBadge(aggregateCount);
+      });
+
+      setupFlags.unreadChangedEvent = true;
     }
 
     if (Tracker && settings && !setupFlags.faviconUpdates) {
@@ -582,4 +798,6 @@ const start = async () => {
   console.log('[Rocket.Chat Desktop] Injected');
 };
 
-start();
+start().catch((error) => {
+  console.error('[Rocket.Chat Desktop] Injected.ts failed to start:', error);
+});

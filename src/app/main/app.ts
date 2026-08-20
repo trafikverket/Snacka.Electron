@@ -19,7 +19,6 @@ import {
   SETTINGS_CLEAR_PERMITTED_SCREEN_CAPTURE_PERMISSIONS,
   SETTINGS_NTLM_CREDENTIALS_CHANGED,
   SETTINGS_SET_HARDWARE_ACCELERATION_OPT_IN_CHANGED,
-  SETTINGS_SET_IS_TRANSPARENT_WINDOW_ENABLED_CHANGED,
   SETTINGS_SET_IS_VIDEO_CALL_SCREEN_CAPTURE_FALLBACK_ENABLED_CHANGED,
 } from '../../ui/actions';
 import { askForClearScreenCapturePermission } from '../../ui/main/dialogs';
@@ -40,8 +39,14 @@ export const packageJsonInformation = {
 
 export const electronBuilderJsonInformation = {
   appId: electronBuilderJson.appId,
-  protocol: electronBuilderJson.protocols.schemes[0],
+  protocol: (electronBuilderJson.protocols as Array<{ schemes: string[] }>)[0]
+    .schemes[0],
+  protocols: (
+    electronBuilderJson.protocols as Array<{ schemes: string[] }>
+  ).flatMap((p) => p.schemes),
 };
+
+export const TELEPHONY_SCHEMES = ['tel', 'callto'] as const;
 
 let isScreenCaptureFallbackForced = false;
 
@@ -83,7 +88,12 @@ export const relaunchApp = (...args: string[]): void => {
 };
 
 export const performElectronStartup = (): void => {
-  app.setAsDefaultProtocolClient(electronBuilderJsonInformation.protocol);
+  for (const scheme of electronBuilderJsonInformation.protocols) {
+    if ((TELEPHONY_SCHEMES as readonly string[]).includes(scheme)) {
+      continue;
+    }
+    app.setAsDefaultProtocolClient(scheme);
+  }
   app.setAppUserModelId(electronBuilderJsonInformation.appId);
 
   app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -341,10 +351,6 @@ export const setupApp = (): void => {
   app.whenReady().then(() => preloadBrowsersList());
 
   listen(SETTINGS_SET_HARDWARE_ACCELERATION_OPT_IN_CHANGED, () => {
-    relaunchApp();
-  });
-
-  listen(SETTINGS_SET_IS_TRANSPARENT_WINDOW_ENABLED_CHANGED, () => {
     relaunchApp();
   });
 

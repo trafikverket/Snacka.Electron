@@ -1,3 +1,5 @@
+import type * as fsPromisesType from 'node:fs/promises';
+
 import axios from 'axios';
 import * as jsonwebtoken from 'jsonwebtoken';
 
@@ -11,9 +13,12 @@ import {
   WEBVIEW_READY,
   WEBVIEW_SERVER_RELOADED,
   SUPPORTED_VERSION_DIALOG_DISMISS,
+  WEBVIEW_SERVER_IS_SUPPORTED_VERSION,
+  WEBVIEW_GIT_COMMIT_HASH_CHANGED,
 } from '../../ui/actions';
 import {
   checkSupportedVersionServers,
+  getExpirationMessageTranslated,
   isServerVersionSupported,
   updateSupportedVersionsData,
 } from './main';
@@ -28,6 +33,9 @@ jest.mock('electron', () => ({
   ipcMain: {
     handle: jest.fn(),
   },
+  powerMonitor: {
+    on: jest.fn(),
+  },
 }));
 
 const dispatchMock = dispatch as jest.MockedFunction<typeof dispatch>;
@@ -35,33 +43,22 @@ const selectMock = select as jest.MockedFunction<typeof select>;
 const listenMock = listen as jest.MockedFunction<typeof listen>;
 const axiosMock = axios as jest.Mocked<typeof axios>;
 
-// Mock data factories
+// Mock data factories.
+// Default shape mirrors the REAL unauthenticated GET /api/info response
+// (apps/meteor/server/api/lib/getServerInfo.ts): version is TRIMMED to
+// major.minor, and `build`/`marketplaceApiVersion`/`commit` are absent
+// because those only appear for authenticated view-statistics callers.
 const createMockServerInfo = (overrides?: Partial<ServerInfo>): ServerInfo => ({
-  version: '7.1.0',
-  uniqueId: 'test-unique-id',
-  build: {
-    date: '2024-01-01',
-    nodeVersion: '18.0.0',
-    arch: 'x64',
-    platform: 'darwin',
-    osRelease: '13.0.0',
-    totalMemory: 16000000000,
-    freeMemory: 8000000000,
-    cpus: 4,
+  version: '7.13',
+  minimumClientVersions: {
+    desktop: '3.9.6',
+    mobile: '4.39.0',
   },
-  marketplaceApiVersion: '1.30.0',
-  commit: {
-    hash: 'abc123',
-    date: new Date(),
-    author: 'Test Author',
-    subject: 'Test Commit',
-    tag: 'v7.1.0',
-    branch: 'main',
-  },
-  success: true,
   supportedVersions: {
     signed: 'mock-jwt-token',
   },
+  cloudWorkspaceId: 'mock-cloud-workspace-id',
+  success: true,
   ...overrides,
 });
 
@@ -101,7 +98,10 @@ const createMockServer = (overrides?: Partial<any>) => ({
 
 describe('supportedVersions/main.ts', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    // resetAllMocks (not clearAllMocks) so a jsonwebtoken.verify
+    // mockReturnValue/mockImplementation set by one test cannot leak into
+    // the next — clearAllMocks only clears call history, not implementations.
+    jest.resetAllMocks();
   });
 
   // ========== INITIALIZATION & SETUP TESTS ==========
@@ -161,7 +161,9 @@ describe('supportedVersions/main.ts', () => {
       // Should call axios.get once (success on first try)
       expect(axiosMock.get).toHaveBeenCalledTimes(1);
 
-      // Should dispatch VERSION_UPDATED with server info
+      // Should dispatch VERSION_UPDATED with server info. /api/info never
+      // carries `commit` for the desktop's unauthenticated request, so
+      // gitCommitHash is undefined here.
       const versionDispatch = dispatchMock.mock.calls.find(
         ([action]) => action.type === WEBVIEW_SERVER_VERSION_UPDATED
       );
@@ -171,6 +173,39 @@ describe('supportedVersions/main.ts', () => {
         payload: {
           url: mockServer.url,
           version: mockServerInfo.version,
+          gitCommitHash: undefined,
+        },
+      });
+    });
+
+    it('should dispatch git commit hash from server info', async () => {
+      const mockServer = createMockServer();
+      // `commit` only occurs for authenticated view-statistics calls; passed
+      // here explicitly to unit-test the dispatch wiring in isolation.
+      const mockServerInfo = createMockServerInfo({
+        commit: {
+          hash: 'bb83777b51a42d',
+          date: new Date(),
+          author: 'Test Author',
+          subject: 'Test Commit',
+          tag: 'v7.13',
+          branch: 'main',
+        },
+      } as any);
+      selectMock.mockReturnValue(mockServer);
+      axiosMock.get = jest.fn().mockResolvedValue({ data: mockServerInfo });
+
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        createMockSupportedVersions()
+      );
+
+      await updateSupportedVersionsData(mockServer.url);
+
+      expect(dispatchMock).toHaveBeenCalledWith({
+        type: WEBVIEW_GIT_COMMIT_HASH_CHANGED,
+        payload: {
+          url: mockServer.url,
+          gitCommitHash: 'bb83777b51a42d',
         },
       });
     });
@@ -256,8 +291,10 @@ describe('supportedVersions/main.ts', () => {
       selectMock.mockReturnValue(mockServer);
       axiosMock.get = jest.fn().mockResolvedValue({ data: mockServerInfo });
 
+      // No uniqueId-scoped exceptions here — this test is about the
+      // supportedVersions.signed decode path, not exception scope resolution.
       (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
-        createMockSupportedVersions()
+        createMockSupportedVersions({ exceptions: undefined })
       );
 
       await updateSupportedVersionsData(mockServer.url);
@@ -342,6 +379,177 @@ describe('supportedVersions/main.ts', () => {
     });
   });
 
+  // ========== EXCEPTION UNIQUE ID SCOPE (SERVER-SIGNED PATH) ==========
+  describe('Exception uniqueId scope resolution on server-signed path', () => {
+    const tenantSupportedVersions = (overrides?: Partial<SupportedVersions>) =>
+      createMockSupportedVersions({
+        versions: [
+          {
+            version: '8.6.0',
+            expiration: new Date(Date.now() + 86400000),
+          },
+        ],
+        exceptions: {
+          domain: 'test.rocket.chat',
+          uniqueId: 'tenant-unique-id',
+          versions: [
+            {
+              version: '7.13.9',
+              expiration: new Date(Date.now() + 86400000),
+            },
+          ],
+        },
+        enforcementStartDate: '2023-12-15T00:00:00Z',
+        ...overrides,
+      });
+
+    it('should fetch uniqueID before validating when /api/info omits uniqueId and exception is uniqueId-scoped', async () => {
+      const mockServer = createMockServer({ version: '7.13' });
+      const mockServerInfo = createMockServerInfo({
+        version: '7.13',
+      });
+      selectMock.mockReturnValue(mockServer);
+      axiosMock.get = jest
+        .fn()
+        .mockResolvedValueOnce({ data: mockServerInfo })
+        .mockResolvedValueOnce({
+          data: { settings: [{ value: 'tenant-unique-id' }] },
+        });
+
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        tenantSupportedVersions()
+      );
+
+      await updateSupportedVersionsData(mockServer.url);
+
+      const uniqueIdDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_UNIQUE_ID_UPDATED &&
+          (action as any).payload?.uniqueID === 'tenant-unique-id'
+      );
+      expect(uniqueIdDispatch).toBeDefined();
+
+      const verdictDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      expect(verdictDispatch?.[0]).toEqual({
+        type: WEBVIEW_SERVER_IS_SUPPORTED_VERSION,
+        payload: {
+          url: mockServer.url,
+          isSupportedVersion: true,
+        },
+      });
+    });
+
+    it('should re-fetch uniqueID when persisted value is stale and honor the exception', async () => {
+      const mockServer = createMockServer({
+        version: '7.13',
+        uniqueID: 'stale-unique-id',
+      });
+      const mockServerInfo = createMockServerInfo({
+        version: '7.13',
+      });
+      selectMock.mockReturnValue(mockServer);
+      axiosMock.get = jest
+        .fn()
+        .mockResolvedValueOnce({ data: mockServerInfo })
+        .mockResolvedValueOnce({
+          data: { settings: [{ value: 'tenant-unique-id' }] },
+        });
+
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        tenantSupportedVersions()
+      );
+
+      await updateSupportedVersionsData(mockServer.url);
+
+      const verdictDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      expect(verdictDispatch?.[0]).toEqual({
+        type: WEBVIEW_SERVER_IS_SUPPORTED_VERSION,
+        payload: {
+          url: mockServer.url,
+          isSupportedVersion: true,
+        },
+      });
+    });
+
+    it('honors the server-source exception with a warning when the fetched uniqueID does not match the scope', async () => {
+      const mockServer = createMockServer({ version: '7.13' });
+      const mockServerInfo = createMockServerInfo({
+        version: '7.13',
+      });
+      selectMock.mockReturnValue(mockServer);
+      axiosMock.get = jest
+        .fn()
+        .mockResolvedValueOnce({ data: mockServerInfo })
+        .mockResolvedValueOnce({
+          data: { settings: [{ value: 'other-tenant-id' }] },
+        });
+
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        tenantSupportedVersions()
+      );
+
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      await updateSupportedVersionsData(mockServer.url);
+
+      // Server-source payloads are self-scoped; a mismatch is diagnostic
+      // only and the exception is still honored.
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('exception scope mismatch')
+      );
+      consoleWarnSpy.mockRestore();
+
+      const verdictDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      expect(verdictDispatch?.[0]).toEqual({
+        type: WEBVIEW_SERVER_IS_SUPPORTED_VERSION,
+        payload: {
+          url: mockServer.url,
+          isSupportedVersion: true,
+        },
+      });
+    });
+
+    it('should not fetch uniqueID when the persisted value already matches the exception scope', async () => {
+      const mockServer = createMockServer({
+        version: '7.13',
+        uniqueID: 'tenant-unique-id',
+      });
+      const mockServerInfo = createMockServerInfo({
+        version: '7.13',
+      });
+      selectMock.mockReturnValue(mockServer);
+      axiosMock.get = jest.fn().mockResolvedValueOnce({ data: mockServerInfo });
+
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        tenantSupportedVersions()
+      );
+
+      await updateSupportedVersionsData(mockServer.url);
+
+      expect(axiosMock.get).toHaveBeenCalledTimes(1);
+
+      const verdictDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      expect(verdictDispatch?.[0]).toEqual({
+        type: WEBVIEW_SERVER_IS_SUPPORTED_VERSION,
+        payload: {
+          url: mockServer.url,
+          isSupportedVersion: true,
+        },
+      });
+    });
+  });
+
   // ========== CLOUD FETCH PATH TESTS ==========
   describe('Cloud Fetch Path', () => {
     it('should fetch cloud info with retries when server fails', async () => {
@@ -406,8 +614,10 @@ describe('supportedVersions/main.ts', () => {
       selectMock.mockReturnValue(mockServer);
       axiosMock.get = jest.fn().mockResolvedValue({ data: mockServerInfo });
 
+      // No uniqueId-scoped exceptions here — this test is about the cloud
+      // fetch being skipped, not exception scope resolution.
       (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
-        createMockSupportedVersions()
+        createMockSupportedVersions({ exceptions: undefined })
       );
 
       await updateSupportedVersionsData(mockServer.url);
@@ -621,7 +831,12 @@ describe('supportedVersions/main.ts', () => {
     it('should return early after successful server decode and dispatch', async () => {
       const mockServer = createMockServer();
       const mockServerInfo = createMockServerInfo();
-      const mockSupportedVersions = createMockSupportedVersions();
+      // No uniqueId-scoped exceptions here — this test is about the
+      // early-return after a successful decode, not exception scope
+      // resolution.
+      const mockSupportedVersions = createMockSupportedVersions({
+        exceptions: undefined,
+      });
       selectMock.mockReturnValue(mockServer);
       axiosMock.get = jest.fn().mockResolvedValue({ data: mockServerInfo });
 
@@ -766,7 +981,7 @@ describe('supportedVersions/main.ts', () => {
     });
 
     it('should optionally include message property', async () => {
-      const futureDate = new Date(Date.now() + 86400000).toISOString();
+      const futureDate = new Date(Date.now() + 86400000);
       const supportedVersions = {
         versions: [
           {
@@ -806,6 +1021,224 @@ describe('supportedVersions/main.ts', () => {
       );
 
       expect(result.supported).toBe(true);
+    });
+
+    it('does not block when enforcementStartDate is missing (uncertain data must not block)', async () => {
+      const supportedVersions = {
+        versions: [{ version: '9.9.0', expiration: new Date() }],
+        // no enforcementStartDate
+      };
+
+      const result = await isServerVersionSupported(
+        mockServer as any,
+        supportedVersions as any
+      );
+
+      expect(result.supported).toBe(true);
+    });
+
+    it('does not block when enforcementStartDate is malformed', async () => {
+      const supportedVersions = {
+        versions: [{ version: '9.9.0', expiration: new Date() }],
+        enforcementStartDate: 'not-a-date',
+      };
+
+      const result = await isServerVersionSupported(
+        mockServer as any,
+        supportedVersions as any
+      );
+
+      expect(result.supported).toBe(true);
+    });
+
+    it('blocks when a valid past enforcementStartDate is present and nothing matches', async () => {
+      const supportedVersions = {
+        versions: [{ version: '9.9.0', expiration: new Date() }],
+        enforcementStartDate: new Date(Date.now() - 86400000).toISOString(),
+      };
+
+      const result = await isServerVersionSupported(
+        mockServer as any,
+        supportedVersions as any
+      );
+
+      expect(result.supported).toBe(false);
+    });
+
+    it('should honor exceptions when exceptions.domain differs only by letter case', async () => {
+      const futureDate = new Date(Date.now() + 86400000);
+      const supportedVersions: SupportedVersions = {
+        enforcementStartDate: new Date(Date.now() - 86400000).toISOString(),
+        timestamp: new Date().toISOString(),
+        versions: [
+          {
+            version: '8.4.0',
+            expiration: futureDate,
+          },
+        ],
+        exceptions: {
+          domain: 'Open.Rocket.Chat',
+          uniqueId: 'test-unique-id',
+          versions: [
+            {
+              version: '8.5.1',
+              expiration: futureDate,
+            },
+          ],
+        },
+      };
+
+      const result = await isServerVersionSupported(
+        {
+          url: 'https://open.rocket.chat/',
+          version: '8.5',
+          title: 'Rocket.Chat Open',
+          uniqueID: 'test-unique-id',
+        } as any,
+        supportedVersions
+      );
+
+      expect(result.supported).toBe(true);
+    });
+
+    it('should support sha-prefixed exception versions by git commit hash', async () => {
+      const futureDate = new Date(Date.now() + 86400000);
+      const supportedVersions: SupportedVersions = {
+        enforcementStartDate: new Date(Date.now() - 86400000).toISOString(),
+        timestamp: new Date().toISOString(),
+        versions: [
+          {
+            version: '8.4.0',
+            expiration: futureDate,
+          },
+        ],
+        exceptions: {
+          domain: 'open.rocket.chat',
+          uniqueId: 'test-unique-id',
+          versions: [
+            {
+              version: 'sha-bb83777',
+              expiration: futureDate,
+            },
+          ],
+        },
+      };
+
+      const result = await isServerVersionSupported(
+        {
+          url: 'https://open.rocket.chat/',
+          version: '8.5',
+          title: 'Rocket.Chat Open',
+          uniqueID: 'test-unique-id',
+          gitCommitHash: 'bb83777b51a42d',
+        } as any,
+        supportedVersions
+      );
+
+      expect(result.supported).toBe(true);
+    });
+
+    it('should not match malformed exception versions by git commit hash', async () => {
+      const futureDate = new Date(Date.now() + 86400000);
+      const supportedVersions: SupportedVersions = {
+        enforcementStartDate: new Date(Date.now() - 86400000).toISOString(),
+        timestamp: new Date().toISOString(),
+        versions: [
+          {
+            version: '8.4.0',
+            expiration: futureDate,
+          },
+        ],
+        exceptions: {
+          domain: 'open.rocket.chat',
+          uniqueId: 'test-unique-id',
+          versions: [
+            {
+              version: '',
+              expiration: futureDate,
+            },
+          ],
+        },
+      };
+
+      const result = await isServerVersionSupported(
+        {
+          url: 'https://open.rocket.chat/',
+          version: '8.5',
+          title: 'Rocket.Chat Open',
+          uniqueID: 'test-unique-id',
+          gitCommitHash: 'bb83777b51a42d',
+        } as any,
+        supportedVersions
+      );
+
+      expect(result.supported).toBe(false);
+    });
+
+    describe('message role targeting', () => {
+      const futureDate = new Date(Date.now() + 86400000);
+      const buildSupportedVersions = (roles?: string[]): SupportedVersions =>
+        ({
+          enforcementStartDate: new Date(Date.now() + 172800000).toISOString(),
+          timestamp: new Date().toISOString(),
+          versions: [
+            {
+              version: '5.4.0',
+              expiration: futureDate,
+            },
+          ],
+          messages: [
+            {
+              remainingDays: 30,
+              title: 'targeted',
+              subtitle: 'sub',
+              description: 'desc',
+              type: 'info',
+              ...(roles ? { roles } : {}),
+              params: {},
+              link: '',
+            },
+          ],
+          i18n: { en: {} },
+        }) as any;
+
+      it('shows a message with no roles to every user', async () => {
+        const result = await isServerVersionSupported(
+          { ...mockServer, userRoles: ['user'] } as any,
+          buildSupportedVersions()
+        );
+
+        expect(result.message?.title).toBe('targeted');
+      });
+
+      it('shows a role-targeted message when the user has the role', async () => {
+        const result = await isServerVersionSupported(
+          { ...mockServer, userRoles: ['admin', 'user'] } as any,
+          buildSupportedVersions(['admin'])
+        );
+
+        expect(result.message?.title).toBe('targeted');
+      });
+
+      it('hides a role-targeted message from users without the role', async () => {
+        const result = await isServerVersionSupported(
+          { ...mockServer, userRoles: ['user'] } as any,
+          buildSupportedVersions(['admin'])
+        );
+
+        expect(result.supported).toBe(true);
+        expect(result.message).toBeUndefined();
+      });
+
+      it('hides a role-targeted message when user roles are unknown', async () => {
+        const result = await isServerVersionSupported(
+          mockServer as any,
+          buildSupportedVersions(['admin'])
+        );
+
+        expect(result.supported).toBe(true);
+        expect(result.message).toBeUndefined();
+      });
     });
   });
 
@@ -914,6 +1347,1478 @@ describe('supportedVersions/main.ts', () => {
     it('should return supported true for all edge cases', async () => {
       const result = await isServerVersionSupported(mockServer as any);
       expect(result.supported).toBe(true);
+    });
+  });
+
+  // ========== RACE CONDITION FIX: isSupportedVersion dispatched from main ==========
+  describe('isSupportedVersion dispatch from main process', () => {
+    it('should dispatch WEBVIEW_SERVER_IS_SUPPORTED_VERSION after successful server-source decode', async () => {
+      const mockServer = createMockServer({ version: '8.5.0' });
+      const futureExpiry = new Date(Date.now() + 86400000 * 365);
+      const mockSupportedVersions = createMockSupportedVersions({
+        versions: [{ version: '8.5.0-develop', expiration: futureExpiry }],
+        enforcementStartDate: '2023-12-15T00:00:00Z',
+      });
+      const mockServerInfo = createMockServerInfo({
+        version: '8.5.0',
+        supportedVersions: { signed: 'mock-jwt-token' },
+      });
+      selectMock.mockReturnValue(mockServer);
+      axiosMock.get = jest.fn().mockResolvedValue({ data: mockServerInfo });
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        mockSupportedVersions
+      );
+
+      await updateSupportedVersionsData(mockServer.url);
+
+      const isSupportedDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      expect(isSupportedDispatch).toBeDefined();
+      expect(
+        (isSupportedDispatch?.[0] as any)?.payload?.isSupportedVersion
+      ).toBe(true);
+    });
+
+    it('should dispatch WEBVIEW_SERVER_IS_SUPPORTED_VERSION after successful cloud-source decode', async () => {
+      const mockServer = createMockServer({ version: '8.5.0' });
+      const futureExpiry = new Date(Date.now() + 86400000 * 365);
+      const mockSupportedVersions = createMockSupportedVersions({
+        versions: [{ version: '8.5.0-develop', expiration: futureExpiry }],
+        enforcementStartDate: '2023-12-15T00:00:00Z',
+      });
+      const mockServerInfo = createMockServerInfo({
+        version: '8.5.0',
+        supportedVersions: undefined,
+      });
+      const mockCloudData = createMockCloudInfo({ signed: 'mock-cloud-jwt' });
+      selectMock.mockReturnValue(mockServer);
+      axiosMock.get = jest
+        .fn()
+        .mockResolvedValueOnce({ data: mockServerInfo })
+        .mockResolvedValueOnce({
+          data: { settings: [{ value: 'unique-id-123' }] },
+        })
+        .mockResolvedValueOnce({ data: mockCloudData });
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        mockSupportedVersions
+      );
+
+      await updateSupportedVersionsData(mockServer.url);
+
+      const isSupportedDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      expect(isSupportedDispatch).toBeDefined();
+      expect(
+        (isSupportedDispatch?.[0] as any)?.payload?.isSupportedVersion
+      ).toBe(true);
+    });
+
+    it('should dispatch WEBVIEW_SERVER_IS_SUPPORTED_VERSION on cache fallback path', async () => {
+      // Cache fallback now also dispatches isSupportedVersion to close the fail-open gap
+      // This test replaces the old "should NOT dispatch" test which was valid before the fix
+      const mockServer = createMockServer({ version: '7.5.0' });
+      selectMock.mockReturnValue(mockServer);
+      // Server fetch fails, unique ID fetch fails -> falls to cache/builtin
+      axiosMock.get = jest.fn().mockRejectedValue(new Error('Network error'));
+
+      jest.useFakeTimers();
+      const promise = updateSupportedVersionsData(mockServer.url);
+      await jest.advanceTimersByTimeAsync(4000);
+      await promise;
+      jest.useRealTimers();
+
+      // isSupportedVersion IS now dispatched on cache/builtin fallback paths
+      const isSupportedDispatches = dispatchMock.mock.calls.filter(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      // At least one dispatch must exist (cache or builtin fallback)
+      expect(isSupportedDispatches.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should dispatch isSupportedVersion: false for unsupported server version via server-source', async () => {
+      const mockServer = createMockServer({ version: '7.13.0' });
+      const pastExpiry = new Date(Date.now() - 86400000);
+      const mockSupportedVersions = createMockSupportedVersions({
+        versions: [{ version: '8.5.0', expiration: pastExpiry }],
+        enforcementStartDate: '2023-12-15T00:00:00Z',
+      });
+      const mockServerInfo = createMockServerInfo({
+        version: '7.13.0',
+        supportedVersions: { signed: 'mock-jwt-token' },
+      });
+      selectMock.mockReturnValue(mockServer);
+      axiosMock.get = jest.fn().mockResolvedValue({ data: mockServerInfo });
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        mockSupportedVersions
+      );
+
+      await updateSupportedVersionsData(mockServer.url);
+
+      const isSupportedDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      expect(isSupportedDispatch).toBeDefined();
+      expect(
+        (isSupportedDispatch?.[0] as any)?.payload?.isSupportedVersion
+      ).toBe(false);
+    });
+  });
+
+  // ========== FALLBACK PATH ENFORCEMENT ==========
+  // These tests verify that the cache and builtin fallback paths dispatch
+  // WEBVIEW_SERVER_IS_SUPPORTED_VERSION before WEBVIEW_SERVER_SUPPORTED_VERSIONS_ERROR.
+  //
+  // Implementation note: the ElectronStore instance is created at module load time,
+  // so we capture it via the prototype mock before tests run. The module-level
+  // builtinSupportedVersions singleton is reset per-test via readFile + jwt.verify mocks.
+  describe('fallback path enforcement', () => {
+    // Capture the store prototype mock so we can control .get() return values.
+    // ElectronStore is auto-mocked; all instances share the same prototype methods.
+    let storeGetMock: jest.Mock;
+
+    beforeAll(() => {
+      // The store was instantiated at module load. The auto-mock gives the prototype
+      // a jest.fn() for every method. We spy on the prototype's get.
+      const ElectronStoreMock = jest.requireMock('electron-store');
+      storeGetMock = jest.spyOn(
+        ElectronStoreMock.prototype,
+        'get'
+      ) as jest.Mock;
+    });
+
+    beforeEach(() => {
+      // Default: cache returns nothing (fall through to builtin)
+      storeGetMock.mockReturnValue(undefined);
+    });
+
+    it('cache fallback dispatches isSupportedVersion: false for unsupported persisted version', async () => {
+      const mockServer = createMockServer({ version: '7.5.0' });
+      selectMock.mockReturnValue(mockServer);
+      axiosMock.get = jest.fn().mockRejectedValue(new Error('Network error'));
+
+      const pastExpiry = new Date(Date.now() - 86400000);
+      const cachedVersions = createMockSupportedVersions({
+        versions: [{ version: '8.0.0', expiration: pastExpiry }],
+        enforcementStartDate: '2023-01-01T00:00:00Z',
+      });
+      storeGetMock.mockReturnValue(cachedVersions);
+
+      jest.useFakeTimers();
+      const promise = updateSupportedVersionsData(mockServer.url);
+      await jest.advanceTimersByTimeAsync(4000);
+      await promise;
+      jest.useRealTimers();
+
+      const isSupportedDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      expect(isSupportedDispatch).toBeDefined();
+      expect(
+        (isSupportedDispatch?.[0] as any)?.payload?.isSupportedVersion
+      ).toBe(false);
+
+      const errorDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_SUPPORTED_VERSIONS_ERROR
+      );
+      expect(errorDispatch).toBeDefined();
+    });
+
+    it('cache fallback dispatches isSupportedVersion: true for supported persisted version', async () => {
+      const mockServer = createMockServer({ version: '7.5.0' });
+      selectMock.mockReturnValue(mockServer);
+      axiosMock.get = jest.fn().mockRejectedValue(new Error('Network error'));
+
+      const futureExpiry = new Date(Date.now() + 86400000 * 365);
+      const cachedVersions = createMockSupportedVersions({
+        versions: [{ version: '7.5.0', expiration: futureExpiry }],
+        enforcementStartDate: '2023-01-01T00:00:00Z',
+      });
+      storeGetMock.mockReturnValue(cachedVersions);
+
+      jest.useFakeTimers();
+      const promise = updateSupportedVersionsData(mockServer.url);
+      await jest.advanceTimersByTimeAsync(4000);
+      await promise;
+      jest.useRealTimers();
+
+      const isSupportedDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      expect(isSupportedDispatch).toBeDefined();
+      expect(
+        (isSupportedDispatch?.[0] as any)?.payload?.isSupportedVersion
+      ).toBe(true);
+    });
+
+    it('builtin fallback dispatches isSupportedVersion: false when server version is unsupported', async () => {
+      const mockServer = createMockServer({ version: '7.5.0' });
+      selectMock.mockReturnValue(mockServer);
+      axiosMock.get = jest.fn().mockRejectedValue(new Error('Network error'));
+
+      // Cache returns nothing (already set by beforeEach)
+      // storeGetMock returns undefined by default
+
+      const pastExpiry = new Date(Date.now() - 86400000);
+      const builtinVersions = createMockSupportedVersions({
+        versions: [{ version: '8.0.0', expiration: pastExpiry }],
+        enforcementStartDate: '2023-01-01T00:00:00Z',
+      });
+
+      // Reset the builtin singleton by making readFile return a token that
+      // decodes to our controlled builtinVersions payload
+      const fsPromises = await import('node:fs/promises');
+      (fsPromises.readFile as jest.Mock).mockResolvedValue('builtin-jwt-token');
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        builtinVersions
+      );
+
+      jest.useFakeTimers();
+      const promise = updateSupportedVersionsData(mockServer.url);
+      await jest.advanceTimersByTimeAsync(4000);
+      await promise;
+      jest.useRealTimers();
+
+      const isSupportedDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      expect(isSupportedDispatch).toBeDefined();
+      expect(
+        (isSupportedDispatch?.[0] as any)?.payload?.isSupportedVersion
+      ).toBe(false);
+
+      const errorDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_SUPPORTED_VERSIONS_ERROR
+      );
+      expect(errorDispatch).toBeDefined();
+    });
+
+    it('prefers builtin over cache when cache is older than builtin (stale-cache-after-update guard)', async () => {
+      // Regression test for #3385: a cache entry written by an older app
+      // version (before the server's version was added to the supported
+      // list) must not permanently outrank a freshly-bundled builtin list
+      // that already supports it. Uses jest.isolateModules for a fresh
+      // builtinSupportedVersions singleton, same as the no-data-anywhere test.
+      await jest.isolateModulesAsync(async () => {
+        jest.mock('../../store');
+        jest.mock('axios');
+        jest.mock('jsonwebtoken');
+        jest.mock('electron-store');
+        jest.mock('node:fs/promises');
+        jest.mock('electron', () => ({
+          ipcMain: { handle: jest.fn() },
+        }));
+
+        const { dispatch: isolatedDispatch, select: isolatedSelect } =
+          await import('../../store');
+        const isolatedAxios = (await import('axios')).default;
+        const isolatedJwt = await import('jsonwebtoken');
+        const { updateSupportedVersionsData: isolatedUpdate } = await import(
+          './main'
+        );
+        const isolatedFs = await import('node:fs/promises');
+
+        const isolatedDispatchMock = isolatedDispatch as jest.MockedFunction<
+          typeof isolatedDispatch
+        >;
+        const isolatedSelectMock = isolatedSelect as jest.MockedFunction<
+          typeof isolatedSelect
+        >;
+        const isolatedAxiosMock = isolatedAxios as jest.Mocked<
+          typeof isolatedAxios
+        >;
+
+        const IsolatedElectronStoreMock = jest.requireMock('electron-store');
+        const isolatedStoreGetMock = jest.spyOn(
+          IsolatedElectronStoreMock.prototype,
+          'get'
+        ) as jest.Mock;
+
+        const mockServer = createMockServer({ version: '8.5.1' });
+        isolatedSelectMock.mockReturnValue(mockServer);
+        isolatedAxiosMock.get = jest
+          .fn()
+          .mockRejectedValue(new Error('Network error'));
+
+        const futureExpiry = new Date(Date.now() + 86400000 * 365);
+
+        // Stale cache: written long ago, does not know about 8.5 -> unsupported.
+        const staleCachedVersions = createMockSupportedVersions({
+          versions: [{ version: '7.0.0', expiration: futureExpiry }],
+          enforcementStartDate: '2023-01-01T00:00:00Z',
+          timestamp: '2020-01-01T00:00:00Z',
+        });
+        isolatedStoreGetMock.mockReturnValue(staleCachedVersions);
+
+        // Fresh builtin: bundled with the current app version, knows 8.5 is supported.
+        const freshBuiltinVersions = createMockSupportedVersions({
+          versions: [{ version: '8.5.0', expiration: futureExpiry }],
+          enforcementStartDate: '2023-01-01T00:00:00Z',
+          timestamp: new Date().toISOString(),
+        });
+        (isolatedFs.readFile as jest.Mock).mockResolvedValue(
+          'builtin-jwt-token'
+        );
+        (isolatedJwt.verify as jest.Mock).mockReturnValue(freshBuiltinVersions);
+
+        jest.useFakeTimers();
+        const promise = isolatedUpdate(mockServer.url);
+        await jest.advanceTimersByTimeAsync(4000);
+        await promise;
+        jest.useRealTimers();
+
+        const isSupportedDispatch = isolatedDispatchMock.mock.calls.find(
+          ([action]) =>
+            (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+        );
+        expect(isSupportedDispatch).toBeDefined();
+        // Must be true — proves the fresher builtin data won over the stale cache.
+        expect(
+          (isSupportedDispatch?.[0] as any)?.payload?.isSupportedVersion
+        ).toBe(true);
+
+        const updatedDispatch = isolatedDispatchMock.mock.calls.find(
+          ([action]) =>
+            (action as any).type === WEBVIEW_SERVER_SUPPORTED_VERSIONS_UPDATED
+        );
+        expect((updatedDispatch?.[0] as any)?.payload?.source).toBe('builtin');
+      });
+    });
+
+    it('cache fallback uses freshly-fetched server version, not stale persisted version', async () => {
+      // Persisted server.version is stale ("7.5.0"); /api/info returns FRESH 8.5.
+      // server-side signed payload missing -> falls through to cloud -> cloud fails -> cache.
+      // Cache contains entries valid for 8.5 but NOT 7.5.
+      // If fix is correct, enforcement is computed against fresh 8.5 -> supported: true.
+      // If fix is wrong (uses stale 7.5), enforcement -> supported: false.
+      const mockServer = createMockServer({ version: '7.5.0' });
+      selectMock.mockReturnValue(mockServer);
+
+      // /api/info returns fresh version 8.5 but no signed supportedVersions field.
+      // getUniqueId also hits axios.get; first /api/info, then settings/uniqueID.
+      // Provide /api/info response, then make subsequent calls fail (cloud).
+      const infoResponse = {
+        data: {
+          version: '8.5',
+          commit: { hash: 'abc1234567890' },
+          // supportedVersions absent -> serverEncoded undefined -> falls to cloud
+        },
+      };
+      axiosMock.get = jest
+        .fn()
+        .mockResolvedValueOnce(infoResponse) // /api/info
+        .mockRejectedValue(new Error('Network error')); // uniqueID + cloud all fail
+
+      const futureExpiry = new Date(Date.now() + 86400000 * 365);
+      const cachedVersions = createMockSupportedVersions({
+        versions: [{ version: '8.5.0', expiration: futureExpiry }],
+        enforcementStartDate: '2023-01-01T00:00:00Z',
+      });
+      storeGetMock.mockReturnValue(cachedVersions);
+
+      jest.useFakeTimers();
+      const promise = updateSupportedVersionsData(mockServer.url);
+      await jest.advanceTimersByTimeAsync(10000);
+      await promise;
+      jest.useRealTimers();
+
+      const isSupportedDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      expect(isSupportedDispatch).toBeDefined();
+      // Must be true — proves enforcement used fresh 8.5, not stale 7.5
+      expect(
+        (isSupportedDispatch?.[0] as any)?.payload?.isSupportedVersion
+      ).toBe(true);
+    });
+
+    it('no-data-anywhere path preserves prior isSupportedVersion verdict (security-correct)', async () => {
+      // Uses jest.isolateModules so the builtinSupportedVersions singleton is fresh
+      // and readFile can be made to fail before it is ever populated.
+      await jest.isolateModulesAsync(async () => {
+        // Re-apply mocks for the isolated module scope
+        jest.mock('../../store');
+        jest.mock('axios');
+        jest.mock('jsonwebtoken');
+        jest.mock('electron-store');
+        jest.mock('node:fs/promises');
+        jest.mock('electron', () => ({
+          ipcMain: { handle: jest.fn() },
+        }));
+
+        const { dispatch: isolatedDispatch, select: isolatedSelect } =
+          await import('../../store');
+        const isolatedAxios = (await import('axios')).default;
+        const { updateSupportedVersionsData: isolatedUpdate } = await import(
+          './main'
+        );
+        const isolatedFs = await import('node:fs/promises');
+
+        const isolatedDispatchMock = isolatedDispatch as jest.MockedFunction<
+          typeof isolatedDispatch
+        >;
+        const isolatedSelectMock = isolatedSelect as jest.MockedFunction<
+          typeof isolatedSelect
+        >;
+        const isolatedAxiosMock = isolatedAxios as jest.Mocked<
+          typeof isolatedAxios
+        >;
+
+        const mockServer = createMockServer({ version: '7.5.0' });
+        isolatedSelectMock.mockReturnValue(mockServer);
+        isolatedAxiosMock.get = jest
+          .fn()
+          .mockRejectedValue(new Error('Network error'));
+
+        // Cache returns nothing (auto-mock default)
+        // Builtin file read fails — singleton never populated
+        (isolatedFs.readFile as jest.Mock).mockRejectedValue(
+          new Error('File not found')
+        );
+
+        const consoleErrorSpy = jest
+          .spyOn(console, 'error')
+          .mockImplementation();
+
+        jest.useFakeTimers();
+        const promise = isolatedUpdate(mockServer.url);
+        await jest.advanceTimersByTimeAsync(4000);
+        await promise;
+        jest.useRealTimers();
+
+        // No-data path must NOT dispatch isSupportedVersion. Prior verdict
+        // (e.g. persisted `false` from a session when evidence existed) is
+        // preserved as security-correct fail-secure default. Only ERROR fires
+        // to signal the fetch attempt completed without fresh evidence.
+        const isSupportedDispatches = isolatedDispatchMock.mock.calls.filter(
+          ([action]) =>
+            (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+        );
+        expect(isSupportedDispatches.length).toBe(0);
+
+        const errorDispatch = isolatedDispatchMock.mock.calls.find(
+          ([action]) =>
+            (action as any).type === WEBVIEW_SERVER_SUPPORTED_VERSIONS_ERROR
+        );
+        expect(errorDispatch).toBeDefined();
+
+        consoleErrorSpy.mockRestore();
+      });
+    });
+  });
+
+  // ========== FALLBACK: either source granting support must win (#3388 regression guard) ==========
+  describe('fallback candidate selection: either source supporting must win', () => {
+    // Each test needs a fresh builtinSupportedVersions singleton with a
+    // SPECIFIC payload distinct from the cache payload, so isolate modules
+    // the same way the stale-cache-after-update test above does.
+    const runIsolated = async (
+      setup: (ctx: {
+        dispatchMock: jest.MockedFunction<typeof dispatch>;
+        selectMock: jest.MockedFunction<typeof select>;
+        axiosMock: jest.Mocked<typeof axios>;
+        storeGetMock: jest.Mock;
+        fsPromises: typeof fsPromisesType;
+        jwt: typeof jsonwebtoken;
+        update: typeof updateSupportedVersionsData;
+      }) => Promise<void>
+    ): Promise<void> => {
+      await jest.isolateModulesAsync(async () => {
+        jest.mock('../../store');
+        jest.mock('axios');
+        jest.mock('jsonwebtoken');
+        jest.mock('electron-store');
+        jest.mock('node:fs/promises');
+        jest.mock('electron', () => ({
+          ipcMain: { handle: jest.fn() },
+        }));
+
+        const { dispatch: isolatedDispatch, select: isolatedSelect } =
+          await import('../../store');
+        const isolatedAxios = (await import('axios')).default;
+        const isolatedJwt = await import('jsonwebtoken');
+        const { updateSupportedVersionsData: isolatedUpdate } = await import(
+          './main'
+        );
+        const isolatedFs = await import('node:fs/promises');
+
+        const isolatedDispatchMock = isolatedDispatch as jest.MockedFunction<
+          typeof isolatedDispatch
+        >;
+        const isolatedSelectMock = isolatedSelect as jest.MockedFunction<
+          typeof isolatedSelect
+        >;
+        const isolatedAxiosMock = isolatedAxios as jest.Mocked<
+          typeof isolatedAxios
+        >;
+
+        const IsolatedElectronStoreMock = jest.requireMock('electron-store');
+        const isolatedStoreGetMock = jest.spyOn(
+          IsolatedElectronStoreMock.prototype,
+          'get'
+        ) as jest.Mock;
+        isolatedStoreGetMock.mockReturnValue(undefined);
+
+        await setup({
+          dispatchMock: isolatedDispatchMock,
+          selectMock: isolatedSelectMock,
+          axiosMock: isolatedAxiosMock,
+          storeGetMock: isolatedStoreGetMock,
+          fsPromises: isolatedFs,
+          jwt: isolatedJwt as unknown as typeof jsonwebtoken,
+          update: isolatedUpdate,
+        });
+      });
+    };
+
+    it('T-A: fresher builtin without the exception must not drop a cached tenant exception that grants support', async () => {
+      await runIsolated(
+        async ({
+          dispatchMock: isolatedDispatchMock,
+          selectMock: isolatedSelectMock,
+          axiosMock: isolatedAxiosMock,
+          storeGetMock: isolatedStoreGetMock,
+          fsPromises: isolatedFs,
+          jwt: isolatedJwt,
+          update: isolatedUpdate,
+        }) => {
+          const mockServer = createMockServer({
+            url: 'https://example.com',
+            version: '7.5.0',
+            uniqueID: 'test-unique-id',
+          });
+          isolatedSelectMock.mockReturnValue(mockServer);
+          isolatedAxiosMock.get = jest
+            .fn()
+            .mockRejectedValue(new Error('Network error'));
+
+          const futureExpiry = new Date(Date.now() + 86400000 * 365);
+
+          // Cache: base versions don't cover 7.5, but a tenant-scoped exception does.
+          const cachedVersions = createMockSupportedVersions({
+            versions: [{ version: '6.0.0', expiration: futureExpiry }],
+            exceptions: {
+              domain: 'example.com',
+              uniqueId: 'test-unique-id',
+              versions: [{ version: '7.5.0', expiration: futureExpiry }],
+            },
+            enforcementStartDate: '2023-01-01T00:00:00Z',
+            timestamp: '2020-01-01T00:00:00Z',
+          });
+          isolatedStoreGetMock.mockReturnValue(cachedVersions);
+
+          // Builtin: FRESHER than cache, but has no exceptions and doesn't
+          // list 7.5 as supported.
+          const freshBuiltinVersions = createMockSupportedVersions({
+            versions: [{ version: '6.0.0', expiration: futureExpiry }],
+            exceptions: undefined,
+            enforcementStartDate: '2023-01-01T00:00:00Z',
+            timestamp: new Date().toISOString(),
+          });
+          (isolatedFs.readFile as jest.Mock).mockResolvedValue(
+            'builtin-jwt-token'
+          );
+          (isolatedJwt.verify as jest.Mock).mockReturnValue(
+            freshBuiltinVersions
+          );
+
+          jest.useFakeTimers();
+          const promise = isolatedUpdate(mockServer.url);
+          // server.uniqueID is set, so both the server-info retry AND the
+          // cloud-fallback retry run (3 attempts x 2000ms delay each).
+          await jest.advanceTimersByTimeAsync(10000);
+          await promise;
+          jest.useRealTimers();
+
+          const isSupportedDispatch = isolatedDispatchMock.mock.calls.find(
+            ([action]) =>
+              (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+          );
+          expect(isSupportedDispatch).toBeDefined();
+          // Cache rescues the server despite builtin's freshness preference.
+          expect(
+            (isSupportedDispatch?.[0] as any)?.payload?.isSupportedVersion
+          ).toBe(true);
+
+          const updatedDispatch = isolatedDispatchMock.mock.calls.find(
+            ([action]) =>
+              (action as any).type === WEBVIEW_SERVER_SUPPORTED_VERSIONS_UPDATED
+          );
+          expect((updatedDispatch?.[0] as any)?.payload?.source).toBe('cloud');
+        }
+      );
+    }, 15000);
+
+    it('T-B: fresher builtin that supports the version still wins over a stale, unsupportive cache (#3388 fix preserved)', async () => {
+      await runIsolated(
+        async ({
+          dispatchMock: isolatedDispatchMock,
+          selectMock: isolatedSelectMock,
+          axiosMock: isolatedAxiosMock,
+          storeGetMock: isolatedStoreGetMock,
+          fsPromises: isolatedFs,
+          jwt: isolatedJwt,
+          update: isolatedUpdate,
+        }) => {
+          const mockServer = createMockServer({ version: '8.5.1' });
+          isolatedSelectMock.mockReturnValue(mockServer);
+          isolatedAxiosMock.get = jest
+            .fn()
+            .mockRejectedValue(new Error('Network error'));
+
+          const futureExpiry = new Date(Date.now() + 86400000 * 365);
+
+          // Stale cache: does not know about 8.5 -> unsupported, no exception.
+          const staleCachedVersions = createMockSupportedVersions({
+            versions: [{ version: '7.0.0', expiration: futureExpiry }],
+            exceptions: undefined,
+            enforcementStartDate: '2023-01-01T00:00:00Z',
+            timestamp: '2020-01-01T00:00:00Z',
+          });
+          isolatedStoreGetMock.mockReturnValue(staleCachedVersions);
+
+          // Fresh builtin: bundled with the current app version, knows 8.5 is supported.
+          const freshBuiltinVersions = createMockSupportedVersions({
+            versions: [{ version: '8.5.0', expiration: futureExpiry }],
+            exceptions: undefined,
+            enforcementStartDate: '2023-01-01T00:00:00Z',
+            timestamp: new Date().toISOString(),
+          });
+          (isolatedFs.readFile as jest.Mock).mockResolvedValue(
+            'builtin-jwt-token'
+          );
+          (isolatedJwt.verify as jest.Mock).mockReturnValue(
+            freshBuiltinVersions
+          );
+
+          jest.useFakeTimers();
+          const promise = isolatedUpdate(mockServer.url);
+          await jest.advanceTimersByTimeAsync(4000);
+          await promise;
+          jest.useRealTimers();
+
+          const isSupportedDispatch = isolatedDispatchMock.mock.calls.find(
+            ([action]) =>
+              (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+          );
+          expect(isSupportedDispatch).toBeDefined();
+          expect(
+            (isSupportedDispatch?.[0] as any)?.payload?.isSupportedVersion
+          ).toBe(true);
+
+          const updatedDispatch = isolatedDispatchMock.mock.calls.find(
+            ([action]) =>
+              (action as any).type === WEBVIEW_SERVER_SUPPORTED_VERSIONS_UPDATED
+          );
+          expect((updatedDispatch?.[0] as any)?.payload?.source).toBe(
+            'builtin'
+          );
+        }
+      );
+    });
+
+    it('T-C: neither cache nor builtin supports the version -> blocked', async () => {
+      await runIsolated(
+        async ({
+          dispatchMock: isolatedDispatchMock,
+          selectMock: isolatedSelectMock,
+          axiosMock: isolatedAxiosMock,
+          storeGetMock: isolatedStoreGetMock,
+          fsPromises: isolatedFs,
+          jwt: isolatedJwt,
+          update: isolatedUpdate,
+        }) => {
+          const mockServer = createMockServer({ version: '9.0.0' });
+          isolatedSelectMock.mockReturnValue(mockServer);
+          isolatedAxiosMock.get = jest
+            .fn()
+            .mockRejectedValue(new Error('Network error'));
+
+          const futureExpiry = new Date(Date.now() + 86400000 * 365);
+
+          const cachedVersions = createMockSupportedVersions({
+            versions: [{ version: '7.0.0', expiration: futureExpiry }],
+            exceptions: undefined,
+            enforcementStartDate: '2023-01-01T00:00:00Z',
+            timestamp: '2020-01-01T00:00:00Z',
+          });
+          isolatedStoreGetMock.mockReturnValue(cachedVersions);
+
+          const builtinVersions = createMockSupportedVersions({
+            versions: [{ version: '8.0.0', expiration: futureExpiry }],
+            exceptions: undefined,
+            enforcementStartDate: '2023-01-01T00:00:00Z',
+            timestamp: new Date().toISOString(),
+          });
+          (isolatedFs.readFile as jest.Mock).mockResolvedValue(
+            'builtin-jwt-token'
+          );
+          (isolatedJwt.verify as jest.Mock).mockReturnValue(builtinVersions);
+
+          jest.useFakeTimers();
+          const promise = isolatedUpdate(mockServer.url);
+          await jest.advanceTimersByTimeAsync(4000);
+          await promise;
+          jest.useRealTimers();
+
+          const isSupportedDispatch = isolatedDispatchMock.mock.calls.find(
+            ([action]) =>
+              (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+          );
+          expect(isSupportedDispatch).toBeDefined();
+          expect(
+            (isSupportedDispatch?.[0] as any)?.payload?.isSupportedVersion
+          ).toBe(false);
+
+          const errorDispatch = isolatedDispatchMock.mock.calls.find(
+            ([action]) =>
+              (action as any).type === WEBVIEW_SERVER_SUPPORTED_VERSIONS_ERROR
+          );
+          expect(errorDispatch).toBeDefined();
+        }
+      );
+    });
+  });
+
+  // ========== CONCURRENCY: overlapping requests must not stale-overwrite ==========
+  describe('overlapping request guard', () => {
+    it('older slower request does not overwrite newer request verdict', async () => {
+      const mockServer = createMockServer({ version: '7.5.0' });
+      selectMock.mockReturnValue(mockServer);
+
+      // Two payloads with opposing verdicts.
+      const futureExpiry = new Date(Date.now() + 86400000 * 365);
+      const supportedPayload = createMockSupportedVersions({
+        versions: [{ version: '7.5.0', expiration: futureExpiry }],
+        enforcementStartDate: '2023-01-01T00:00:00Z',
+      });
+      const unsupportedPayload = createMockSupportedVersions({
+        versions: [{ version: '8.0.0', expiration: futureExpiry }],
+        enforcementStartDate: '2023-01-01T00:00:00Z',
+      });
+
+      // Older request resolves slowly with UNSUPPORTED.
+      // Newer request resolves fast with SUPPORTED.
+      // We control timing via deferred axios resolutions.
+      let resolveOld: (v: any) => void = () => {};
+      let resolveNew: (v: any) => void = () => {};
+      const oldPromise = new Promise((r) => {
+        resolveOld = r;
+      });
+      const newPromise = new Promise((r) => {
+        resolveNew = r;
+      });
+
+      axiosMock.get = jest
+        .fn()
+        .mockImplementationOnce(() => oldPromise) // older /api/info
+        .mockImplementationOnce(() => newPromise); // newer /api/info
+
+      // Kick off older first (will await oldPromise inside withRetries),
+      // then newer second.
+      const oldRun = updateSupportedVersionsData(mockServer.url);
+      const newRun = updateSupportedVersionsData(mockServer.url);
+
+      // Resolve newer first with version that yields supported: true
+      resolveNew({
+        data: {
+          version: '7.5.0',
+          supportedVersions: { signed: 'newer-jwt' },
+        },
+      });
+      // jwt.verify mock should return supportedPayload for newer
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        supportedPayload
+      );
+
+      await newRun;
+
+      // Now resolve older — should be detected as stale and discarded.
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        unsupportedPayload
+      );
+      resolveOld({
+        data: {
+          version: '7.5.0',
+          supportedVersions: { signed: 'older-jwt' },
+        },
+      });
+
+      await oldRun;
+
+      const isSupportedDispatches = dispatchMock.mock.calls.filter(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      // Last verdict must be from the newer request (true), not older (false).
+      const last = isSupportedDispatches[isSupportedDispatches.length - 1];
+      expect((last?.[0] as any)?.payload?.isSupportedVersion).toBe(true);
+    });
+  });
+
+  describe('cache poisoning guard', () => {
+    it('older slower request does not call saveToCache after newer request resolved', async () => {
+      // We verify staleness is checked BEFORE saveToCache by spying on the
+      // store's set() method via the ElectronStore prototype.
+      const ElectronStoreMock = jest.requireMock('electron-store');
+      const setSpy = jest.spyOn(
+        ElectronStoreMock.prototype,
+        'set'
+      ) as jest.Mock;
+      setSpy.mockClear();
+
+      const mockServer = createMockServer({ version: '7.5.0' });
+      selectMock.mockReturnValue(mockServer);
+
+      const futureExpiry = new Date(Date.now() + 86400000 * 365);
+      const newerPayload = createMockSupportedVersions({
+        versions: [{ version: '7.5.0', expiration: futureExpiry }],
+        enforcementStartDate: '2023-01-01T00:00:00Z',
+      });
+      const olderPayload = createMockSupportedVersions({
+        versions: [{ version: '8.0.0', expiration: futureExpiry }],
+        enforcementStartDate: '2023-01-01T00:00:00Z',
+      });
+
+      let resolveOld: (v: any) => void = () => {};
+      let resolveNew: (v: any) => void = () => {};
+      const oldPromise = new Promise((r) => {
+        resolveOld = r;
+      });
+      const newPromise = new Promise((r) => {
+        resolveNew = r;
+      });
+
+      axiosMock.get = jest
+        .fn()
+        .mockImplementationOnce(() => oldPromise)
+        .mockImplementationOnce(() => newPromise);
+
+      const oldRun = updateSupportedVersionsData(mockServer.url);
+      const newRun = updateSupportedVersionsData(mockServer.url);
+
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        newerPayload
+      );
+      resolveNew({
+        data: {
+          version: '7.5.0',
+          supportedVersions: { signed: 'newer-jwt' },
+        },
+      });
+      await newRun;
+
+      // After newer completed, capture set() calls so far. Newer should have
+      // written the cache key once.
+      const setCallsBeforeOldResolves = setSpy.mock.calls.length;
+
+      // Now resolve older. Its decode happens, but stale check must short-circuit
+      // BEFORE saveToCache.
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        olderPayload
+      );
+      resolveOld({
+        data: {
+          version: '7.5.0',
+          supportedVersions: { signed: 'older-jwt' },
+        },
+      });
+      await oldRun;
+
+      // The older request must NOT have written to the persistent store after
+      // being identified as stale.
+      expect(setSpy.mock.calls.length).toBe(setCallsBeforeOldResolves);
+    });
+  });
+
+  // ========== UNIQUE ID ENDPOINT: must use fresh /api/info version ==========
+  describe('uniqueID endpoint selection uses fresh version', () => {
+    it('uses fresh 7.0.0+ endpoint when /api/info reports >= 7.0.0 but persisted version is < 7', async () => {
+      // Persisted 6.0.0 -> would route to legacy settings endpoint.
+      // Fresh /api/info reports 7.5.0 -> must route to /api/v1/server.uniqueId.
+      const mockServer = createMockServer({ version: '6.0.0' });
+      selectMock.mockReturnValue(mockServer);
+
+      const callLog: string[] = [];
+      axiosMock.get = jest.fn().mockImplementation((url: string) => {
+        callLog.push(url);
+        if (url.includes('api/info')) {
+          return Promise.resolve({
+            data: {
+              version: '7.5.0',
+              // No supportedVersions.signed -> falls through to cloud lookup,
+              // which requires uniqueID first.
+            },
+          });
+        }
+        // After /api/info, the next request is uniqueID lookup. We don't care
+        // about the response — only the URL chosen — so reject to short-circuit.
+        return Promise.reject(new Error('stop after uniqueID call'));
+      });
+
+      jest.useFakeTimers();
+      const promise = updateSupportedVersionsData(mockServer.url);
+      await jest.advanceTimersByTimeAsync(10000);
+      await promise;
+      jest.useRealTimers();
+
+      // Find uniqueID lookup call (anything that isn't /api/info).
+      const uniqueIdCall = callLog.find((u) => !u.includes('api/info'));
+      expect(uniqueIdCall).toBeDefined();
+      // Modern endpoint (v >= 7.0.0): settings.public?_id=uniqueID
+      // Legacy endpoint (v < 7.0.0): settings.public?query=<encoded uniqueID>
+      // The persisted version is 6.0.0 (would route to legacy `query=...`),
+      // but fresh /api/info reports 7.5.0 so we must hit the modern `_id=` form.
+      expect(uniqueIdCall).toContain('_id=uniqueID');
+      expect(uniqueIdCall).not.toContain('query=');
+    });
+  });
+
+  describe('exception scope (cross-tenant guard)', () => {
+    const futureExpiry = new Date(Date.now() + 86400000 * 365 * 3);
+    const baseVersions = {
+      versions: [],
+      enforcementStartDate: '2023-12-15T00:00:00Z',
+      timestamp: new Date().toISOString(),
+      messages: [],
+      i18n: {},
+    };
+
+    it('does NOT honor commit-hash exception from the BUILTIN payload when the domain mismatches', async () => {
+      const payload = {
+        ...baseVersions,
+        exceptions: {
+          domain: 'tenant-a.example.com',
+          uniqueId: 'tenant-a-unique',
+          versions: [{ version: 'sha-abc1234', expiration: futureExpiry }],
+        },
+      } as unknown as SupportedVersions;
+
+      // Server B has matching commit hash but different domain. The builtin
+      // payload is the only source that can carry another tenant's
+      // exceptions, so it keeps the strict scope requirement.
+      const serverB = {
+        url: 'https://tenant-b.example.com/',
+        version: '8.5',
+        title: 'Tenant B',
+        uniqueID: 'tenant-b-unique',
+      } as any;
+
+      const result = await isServerVersionSupported(
+        serverB,
+        payload,
+        'abc1234567890',
+        'builtin'
+      );
+      // Enforcement falls through (no versions match either) -> unsupported.
+      expect(result.supported).toBe(false);
+    });
+
+    it('does NOT honor commit-hash exception from the BUILTIN payload when uniqueId mismatches', async () => {
+      const payload = {
+        ...baseVersions,
+        exceptions: {
+          // Same domain (or absent), but different uniqueId.
+          domain: 'shared.example.com',
+          uniqueId: 'tenant-a-unique',
+          versions: [{ version: 'sha-abc1234', expiration: futureExpiry }],
+        },
+      } as unknown as SupportedVersions;
+
+      const serverB = {
+        url: 'https://shared.example.com/',
+        version: '8.5',
+        title: 'Tenant B',
+        uniqueID: 'tenant-b-unique',
+      } as any;
+
+      const result = await isServerVersionSupported(
+        serverB,
+        payload,
+        'abc1234567890',
+        'builtin'
+      );
+      expect(result.supported).toBe(false);
+    });
+
+    it('honors a scope-mismatched exception from a SERVER-source payload with a diagnostic warning', async () => {
+      const payload = {
+        ...baseVersions,
+        exceptions: {
+          domain: 'tenant-a.example.com',
+          uniqueId: 'tenant-a-unique',
+          versions: [{ version: 'sha-abc1234', expiration: futureExpiry }],
+        },
+      } as unknown as SupportedVersions;
+
+      const serverB = {
+        url: 'https://tenant-b.example.com/',
+        version: '8.5',
+        title: 'Tenant B',
+        uniqueID: 'tenant-b-unique',
+      } as any;
+
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const result = await isServerVersionSupported(
+        serverB,
+        payload,
+        'abc1234567890',
+        'server'
+      );
+      expect(result.supported).toBe(true);
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('exception scope mismatch')
+      );
+      consoleWarnSpy.mockRestore();
+    });
+
+    it('honors commit-hash exception when domain AND uniqueId both match', async () => {
+      const payload = {
+        ...baseVersions,
+        exceptions: {
+          domain: 'tenant-a.example.com',
+          uniqueId: 'tenant-a-unique',
+          versions: [{ version: 'sha-abc1234', expiration: futureExpiry }],
+        },
+      } as unknown as SupportedVersions;
+
+      const serverA = {
+        url: 'https://tenant-a.example.com/',
+        version: '8.5',
+        title: 'Tenant A',
+        uniqueID: 'tenant-a-unique',
+      } as any;
+
+      const result = await isServerVersionSupported(
+        serverA,
+        payload,
+        'abc1234567890'
+      );
+      expect(result.supported).toBe(true);
+    });
+
+    it('honors scoped exception when local server.uniqueID is UNKNOWN and the domain matches', async () => {
+      const payload = {
+        ...baseVersions,
+        exceptions: {
+          domain: 'tenant-a.example.com',
+          uniqueId: 'tenant-a-unique',
+          versions: [{ version: 'sha-abc1234', expiration: futureExpiry }],
+        },
+      } as unknown as SupportedVersions;
+
+      // Same domain. Same commit hash. Local uniqueID UNKNOWN (e.g.
+      // settings.public restricted by enterprise API ACLs). An unprovable
+      // identity must not disqualify a domain-matched exception.
+      const serverWithoutUniqueID = {
+        url: 'https://tenant-a.example.com/',
+        version: '8.5',
+        title: 'Tenant A',
+        // uniqueID: undefined
+      } as any;
+
+      const result = await isServerVersionSupported(
+        serverWithoutUniqueID,
+        payload,
+        'abc1234567890'
+      );
+      expect(result.supported).toBe(true);
+    });
+
+    it('rejects a BUILTIN-source exception on a PROVEN uniqueID mismatch even when the domain matches', async () => {
+      const payload = {
+        ...baseVersions,
+        exceptions: {
+          domain: 'tenant-a.example.com',
+          uniqueId: 'tenant-a-unique',
+          versions: [{ version: 'sha-abc1234', expiration: futureExpiry }],
+        },
+      } as unknown as SupportedVersions;
+
+      const serverWithOtherUniqueID = {
+        url: 'https://tenant-a.example.com/',
+        version: '8.5',
+        title: 'Tenant A',
+        uniqueID: 'tenant-b-unique',
+      } as any;
+
+      const result = await isServerVersionSupported(
+        serverWithOtherUniqueID,
+        payload,
+        'abc1234567890',
+        'builtin'
+      );
+      expect(result.supported).toBe(false);
+    });
+
+    it('honors exception when payload has no scope fields (legacy/global)', async () => {
+      const payload = {
+        ...baseVersions,
+        exceptions: {
+          // No domain, no uniqueId — global scope (legacy payload).
+          versions: [{ version: 'sha-abc1234', expiration: futureExpiry }],
+        },
+      } as unknown as SupportedVersions;
+
+      const server = {
+        url: 'https://any.example.com/',
+        version: '8.5',
+        title: 'Any',
+      } as any;
+
+      const result = await isServerVersionSupported(
+        server,
+        payload,
+        'abc1234567890'
+      );
+      expect(result.supported).toBe(true);
+    });
+  });
+
+  describe('gitCommitHash persisted to server state via WEBVIEW_SERVER_VERSION_UPDATED', () => {
+    it('reducer preserves gitCommitHash when payload omits it (preload setVersion case)', async () => {
+      const { servers: serversReducer } = await import('../reducers');
+      const initialState = [
+        {
+          url: 'https://test.rocket.chat',
+          title: 'Test',
+          version: '7.0.0',
+          gitCommitHash: 'preserve-me-abc1234',
+        },
+      ];
+      const after = serversReducer(
+        initialState as any,
+        {
+          type: WEBVIEW_SERVER_VERSION_UPDATED,
+          payload: { url: 'https://test.rocket.chat', version: '7.0.1' },
+        } as any
+      );
+      expect(after[0].version).toBe('7.0.1');
+      expect(after[0].gitCommitHash).toBe('preserve-me-abc1234');
+    });
+
+    it('dispatches WEBVIEW_SERVER_VERSION_UPDATED with gitCommitHash from /api/info', async () => {
+      const mockServer = createMockServer({ version: '7.5.0' });
+      selectMock.mockReturnValue(mockServer);
+
+      const futureExpiry = new Date(Date.now() + 86400000 * 365);
+      const validPayload = createMockSupportedVersions({
+        versions: [{ version: '7.5.0', expiration: futureExpiry }],
+        enforcementStartDate: '2023-01-01T00:00:00Z',
+      });
+
+      // `commit` only occurs for authenticated view-statistics calls; passed
+      // here explicitly to unit-test the gitCommitHash dispatch wiring.
+      axiosMock.get = jest.fn().mockResolvedValue({
+        data: {
+          version: '7.5.0',
+          commit: { hash: 'abcdef1234567890' },
+          supportedVersions: { signed: 'jwt' },
+        },
+      });
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        validPayload
+      );
+
+      await updateSupportedVersionsData(mockServer.url);
+
+      const versionDispatch = dispatchMock.mock.calls.find(
+        ([action]) => (action as any).type === WEBVIEW_SERVER_VERSION_UPDATED
+      );
+      expect(versionDispatch).toBeDefined();
+      // gitCommitHash threaded through so SupportedVersionDialog can match
+      // sha-based exceptions consistently with the main process.
+      expect((versionDispatch?.[0] as any)?.payload?.gitCommitHash).toBe(
+        'abcdef1234567890'
+      );
+    });
+  });
+
+  describe('dispatch ordering: verdict before fetchState success', () => {
+    it('dispatches WEBVIEW_SERVER_IS_SUPPORTED_VERSION before WEBVIEW_SERVER_SUPPORTED_VERSIONS_UPDATED on server-source path', async () => {
+      const mockServer = createMockServer({ version: '7.5.0' });
+      selectMock.mockReturnValue(mockServer);
+
+      const futureExpiry = new Date(Date.now() + 86400000 * 365);
+      const validPayload = createMockSupportedVersions({
+        versions: [{ version: '7.5.0', expiration: futureExpiry }],
+        enforcementStartDate: '2023-01-01T00:00:00Z',
+      });
+
+      axiosMock.get = jest.fn().mockResolvedValue({
+        data: {
+          version: '7.5.0',
+          supportedVersions: { signed: 'valid-jwt' },
+        },
+      });
+      (jest.spyOn(jsonwebtoken, 'verify') as jest.Mock).mockReturnValue(
+        validPayload
+      );
+
+      await updateSupportedVersionsData(mockServer.url);
+
+      const isSupportedIdx = dispatchMock.mock.calls.findIndex(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      const updatedIdx = dispatchMock.mock.calls.findIndex(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_SUPPORTED_VERSIONS_UPDATED
+      );
+      expect(isSupportedIdx).toBeGreaterThanOrEqual(0);
+      expect(updatedIdx).toBeGreaterThanOrEqual(0);
+      // Verdict must land in the store BEFORE fetchState='success' triggers
+      // UnsupportedServer with stale isSupportedVersion.
+      expect(isSupportedIdx).toBeLessThan(updatedIdx);
+    });
+  });
+
+  // ========== EXCEPTION MATCHING: exact-string and commit-hash ==========
+  describe('isServerVersionSupported exception matching', () => {
+    const baseVersions: SupportedVersions = {
+      versions: [],
+      enforcementStartDate: '2023-12-15T00:00:00Z',
+      timestamp: new Date().toISOString(),
+      exceptions: {
+        domain: 'open.rocket.chat',
+        uniqueId: 'abc',
+        versions: [
+          {
+            version: 'sha-bb83777',
+            expiration: new Date(Date.now() + 86400000 * 365 * 3),
+          },
+        ],
+      },
+    };
+
+    it('should match exception by commit hash (sha-<7chars> format)', async () => {
+      const server = {
+        url: 'https://open.rocket.chat',
+        version: '8.5',
+        uniqueID: 'abc',
+      } as any;
+      const result = await isServerVersionSupported(
+        server,
+        baseVersions,
+        'bb83777abcdef'
+      );
+      expect(result.supported).toBe(true);
+    });
+
+    it('should match exception by full commit hash', async () => {
+      const versionsWithFullHash: SupportedVersions = {
+        ...baseVersions,
+        exceptions: {
+          domain: 'open.rocket.chat',
+          uniqueId: 'abc',
+          versions: [
+            {
+              version: 'bb83777abcdef',
+              expiration: new Date(Date.now() + 86400000 * 365 * 3),
+            },
+          ],
+        },
+      };
+      const server = {
+        url: 'https://open.rocket.chat',
+        version: '8.5',
+        uniqueID: 'abc',
+      } as any;
+      const result = await isServerVersionSupported(
+        server,
+        versionsWithFullHash,
+        'bb83777abcdef'
+      );
+      expect(result.supported).toBe(true);
+    });
+
+    it('should NOT match exception when commit hash is absent', async () => {
+      const server = {
+        url: 'https://open.rocket.chat',
+        version: '8.5',
+        uniqueID: 'abc',
+      } as any;
+      // No commit hash passed, sha exception cannot match
+      const result = await isServerVersionSupported(server, baseVersions);
+      // Should fall through to versions check (empty) -> enforcement past -> false
+      expect(result.supported).toBe(false);
+    });
+
+    it('should not match expired exception even with correct commit hash', async () => {
+      const expiredExceptionVersions: SupportedVersions = {
+        versions: [],
+        enforcementStartDate: '2023-12-15T00:00:00Z',
+        timestamp: new Date().toISOString(),
+        exceptions: {
+          domain: 'open.rocket.chat',
+          uniqueId: 'abc',
+          versions: [
+            {
+              version: 'sha-bb83777',
+              expiration: new Date(Date.now() - 86400000),
+            },
+          ],
+        },
+      };
+      const server = {
+        url: 'https://open.rocket.chat',
+        version: '8.5',
+        uniqueID: 'abc',
+      } as any;
+      const result = await isServerVersionSupported(
+        server,
+        expiredExceptionVersions,
+        'bb83777abcdef'
+      );
+      // Expired exception falls through; versions empty; enforcement past -> false
+      expect(result.supported).toBe(false);
+    });
+
+    it('should still match exception by semver satisfies as fallback', async () => {
+      const semverExceptionVersions: SupportedVersions = {
+        versions: [],
+        enforcementStartDate: '2023-12-15T00:00:00Z',
+        timestamp: new Date().toISOString(),
+        exceptions: {
+          domain: 'open.rocket.chat',
+          uniqueId: 'abc',
+          versions: [
+            {
+              version: '8.5.0',
+              expiration: new Date(Date.now() + 86400000 * 365),
+            },
+          ],
+        },
+      };
+      const server = {
+        url: 'https://open.rocket.chat',
+        version: '8.5',
+        uniqueID: 'abc',
+      } as any;
+      const result = await isServerVersionSupported(
+        server,
+        semverExceptionVersions
+      );
+      expect(result.supported).toBe(true);
+    });
+  });
+
+  // ========== FIX-1: fallback path validation must not throw unguarded ==========
+  describe('fallback path validation failure (fail-open guard)', () => {
+    it('dispatches ERROR (not a rejection) and no IS_SUPPORTED_VERSION when the fallback payload is malformed', async () => {
+      const mockServer = createMockServer({ version: '7.5.0' });
+      selectMock.mockReturnValue(mockServer);
+      axiosMock.get = jest.fn().mockRejectedValue(new Error('Network error'));
+
+      // Cache returns a corrupt payload: `versions` is not an array, so
+      // isServerVersionSupported's `versions.find` throws synchronously.
+      const ElectronStoreMock = jest.requireMock('electron-store');
+      const storeGetMock = jest.spyOn(
+        ElectronStoreMock.prototype,
+        'get'
+      ) as jest.Mock;
+      storeGetMock.mockReturnValue({
+        versions: { notAnArray: true },
+        enforcementStartDate: '2023-01-01T00:00:00Z',
+        timestamp: new Date().toISOString(),
+      });
+
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
+
+      jest.useFakeTimers();
+      const promise = updateSupportedVersionsData(mockServer.url);
+      await jest.advanceTimersByTimeAsync(4000);
+      // Must resolve, not reject.
+      await expect(promise).resolves.toBeUndefined();
+      jest.useRealTimers();
+
+      const errorDispatch = dispatchMock.mock.calls.find(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_SUPPORTED_VERSIONS_ERROR
+      );
+      expect(errorDispatch).toBeDefined();
+
+      const isSupportedDispatches = dispatchMock.mock.calls.filter(
+        ([action]) =>
+          (action as any).type === WEBVIEW_SERVER_IS_SUPPORTED_VERSION
+      );
+      expect(isSupportedDispatches.length).toBe(0);
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Error validating fallback'),
+        expect.anything()
+      );
+
+      consoleErrorSpy.mockRestore();
+      storeGetMock.mockRestore();
+    });
+  });
+
+  // ========== FIX-3: cloud lookup must not skip on persisted uniqueID ==========
+  describe('cloud fetch gate uses persisted uniqueID as fallback', () => {
+    it('fetches cloud endpoint when fresh uniqueID fetch fails but server has a persisted uniqueID', async () => {
+      const mockServer = createMockServer({
+        version: '7.5.0',
+        uniqueID: 'persisted-unique-id',
+      });
+      const mockServerInfo = createMockServerInfo({
+        supportedVersions: undefined,
+      });
+      selectMock.mockReturnValue(mockServer);
+      axiosMock.get = jest
+        .fn()
+        .mockResolvedValueOnce({ data: mockServerInfo }) // /api/info
+        .mockRejectedValueOnce(new Error('uniqueID fetch failed')) // getUniqueId
+        .mockResolvedValueOnce({ data: createMockCloudInfo() }); // cloud lookup
+
+      await updateSupportedVersionsData(mockServer.url);
+
+      const cloudCall = axiosMock.get.mock.calls.find(([url]) =>
+        (url as string).includes('releases.rocket.chat')
+      );
+      expect(cloudCall).toBeDefined();
+    });
+  });
+
+  // ========== FIX-5: getExpirationMessageTranslated must not throw ==========
+  describe('getExpirationMessageTranslated i18n guard', () => {
+    it('returns null instead of throwing when i18n has neither the requested language nor "en"', () => {
+      const result = getExpirationMessageTranslated(
+        {},
+        { title: 'title', subtitle: 'sub', description: 'desc' } as any,
+        new Date(Date.now() + 86400000),
+        'en',
+        'My Server',
+        'https://rocket.chat',
+        '7.0.0'
+      );
+
+      expect(result).toBeNull();
+    });
+  });
+
+  // ========== FIX-7: revalidate all servers on wake-from-sleep ==========
+  describe('power resume revalidation', () => {
+    it('registers a powerMonitor resume handler when checkSupportedVersionServers runs', async () => {
+      const electronMock = jest.requireMock('electron');
+
+      checkSupportedVersionServers();
+
+      expect(electronMock.powerMonitor.on).toHaveBeenCalledWith(
+        'resume',
+        expect.any(Function)
+      );
     });
   });
 });

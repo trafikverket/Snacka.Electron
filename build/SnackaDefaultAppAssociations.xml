@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Standardapp-associationer för Snacka Desktop på Windows 10/11.
+
+  Tillämpas via något av:
+    - Grupprincip: Computer Configuration -> Administrative Templates ->
+      Windows Components -> File Explorer -> "Set a default associations
+      configuration file", som pekar på den här filen.
+    - Intune: ApplicationDefaults CSP med Base64-kodat innehåll från filen.
+    - DISM (avbildningsutrullning): dism /Online /Import-DefaultAppAssociations:
+      <sökväg-till-filen>
+    - MSI-egenskap: installera med SET_DEFAULT_ASSOCIATIONS=1 så skriver
+      installern principvärdet i registret.
+
+  ProgId nedan MÅSTE hållas i synk med build/installer.nsh
+  (registerTelephonyCapabilities) och MSI:ns Capabilities-registrering.
+-->
+<DefaultAssociations>
+  <Association Identifier="tel"    ProgId="Snacka.tel"    ApplicationName="Snacka" />
+  <Association Identifier="callto" ProgId="Snacka.callto" ApplicationName="Snacka" />
+</DefaultAssociations>

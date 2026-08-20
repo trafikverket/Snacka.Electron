@@ -1,0 +1,84 @@
+import { IconButton } from '@rocket.chat/fuselage';
+import type { MouseEvent } from 'react';
+import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { dispatch } from '../../../store';
+import { APP_MENU_TRIGGERED } from '../../actions';
+import { TabBarButtonWrapper } from './styles';
+import type { TabOrientation } from './styles';
+
+type MeatballMenuButtonProps = {
+  orientation?: TabOrientation;
+  tiny?: boolean;
+};
+
+export const MeatballMenuButton = ({
+  orientation = 'horizontal',
+  tiny = false,
+}: MeatballMenuButtonProps) => {
+  const { t } = useTranslation();
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  const openMenu = (element: HTMLElement): void => {
+    const rect = element.getBoundingClientRect();
+    dispatch({
+      type: APP_MENU_TRIGGERED,
+      payload: { x: Math.round(rect.left), y: Math.round(rect.bottom) },
+    });
+  };
+
+  const handleClick = (event: MouseEvent<HTMLButtonElement>): void => {
+    openMenu(event.currentTarget);
+  };
+
+  useEffect(() => {
+    // On Windows/Linux a solo Alt reveals the native (auto-hidden) menu bar.
+    // Only macOS uses Alt as a meatball accelerator — there is no in-window
+    // native menu bar to toggle.
+    if (process.platform !== 'darwin') {
+      return;
+    }
+
+    let isSoloAltPress = false;
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Alt') {
+        isSoloAltPress = !event.repeat;
+        return;
+      }
+      isSoloAltPress = false;
+    };
+
+    const handleKeyUp = (event: KeyboardEvent): void => {
+      if (event.key === 'Alt' && isSoloAltPress && buttonRef.current) {
+        openMenu(buttonRef.current);
+      }
+      isSoloAltPress = false;
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  return (
+    <TabBarButtonWrapper>
+      <IconButton
+        {...(tiny ? { tiny: true } : { medium: true })}
+        ref={buttonRef}
+        icon={orientation === 'horizontal' ? 'meatballs' : 'kebab'}
+        aria-haspopup='menu'
+        aria-label={t('tabBar.meatballMenu')}
+        title={t('tabBar.meatballMenu')}
+        onClick={handleClick}
+      />
+    </TabBarButtonWrapper>
+  );
+};
+
+export default MeatballMenuButton;

@@ -73,6 +73,8 @@ Dokumentera alla ändringar för enklare merge-hantering:
 | **Metadata** | `package.json` | `"author"`, `"homepage"`, `"repository"` |
 | **GitHub Actions** | `.github/workflows/` | Artifacts istället för publicering |
 | **Build Assets** | Konfigurationsspecifika värden | Om tillämpligt |
+| **Telefoni (Windows)** | `build/installer.nsh`, `build/msiProjectCreated.js`, `build/SnackaDefaultAppAssociations.xml`, `electron-builder.json` | ProgIDs `Snacka.tel`/`Snacka.callto`, `Software\Snacka\Capabilities`, `RegisteredApplications\Snacka` |
+| **Telefoni (UI-text)** | `src/i18n/en.i18n.json` | Telefoni-strängar säger "Snacka", inte "Rocket.Chat" |
 
 ---
 
@@ -243,6 +245,41 @@ git checkout --ours yarn.lock
 yarn install
 git add yarn.lock
 ```
+
+### Problem: Beroenden driver isär från upstream
+
+**Orsak:** Vid konfliktlösning i `package.json` behålls "vår" sida även för rader
+som egentligen bara var upstream-uppdateringar. Vid 4.14.1-mergen tappades
+`github-markdown-css` och säkerhets-pinnen `resolutions.axios` på det sättet,
+trots att `src/public/main.css` importerar paketet.
+
+**Detektion:** Jämför beroendesektionerna efter varje merge — de ska vara
+identiska med upstream om ni inte medvetet avviker:
+
+```powershell
+git show <upstream-tag>:package.json > $env:TEMP\pkg-upstream.json
+node -e "const a=require('./package.json'),b=require(process.env.TEMP+'/pkg-upstream.json');for(const s of ['dependencies','devDependencies','optionalDependencies','resolutions'])if(JSON.stringify(a[s])!==JSON.stringify(b[s]))console.log('SKILJER:',s)"
+```
+
+**Solution:** Återställ upstreams värden om avvikelsen inte är medveten och
+dokumenterad. Är beroendena identiska med upstream kan ni ta upstreams
+`yarn.lock` rakt av (`git checkout --theirs yarn.lock`) — då behöver bara
+workspace-posten skrivas om, vilket `yarn install` gör.
+
+### Problem: `yarn install` timeoutar lokalt
+
+**Orsak:** Yarn 4 läser inte `~/.npmrc`, så TRV-proxyn plockas inte upp och
+anropen mot registret går rakt ut och timeoutar.
+
+**Solution:** Sätt proxyn som Yarn-miljövariabler för körningen:
+
+```powershell
+$env:YARN_HTTP_PROXY='http://proxyn.trafikverket.local:8080'
+$env:YARN_HTTPS_PROXY='http://proxyn.trafikverket.local:8080'
+yarn install
+```
+
+CI påverkas inte — GitHub-runners når registret direkt.
 
 ### Problem: Tappade Snacka-branding efter merge
 

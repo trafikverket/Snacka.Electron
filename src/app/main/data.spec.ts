@@ -1,8 +1,54 @@
 import * as store from '../../store';
+import { MENU_BAR_DEFAULT_REVISION } from '../PersistableValues';
 import { APP_SETTINGS_LOADED } from '../actions';
 import { mergePersistableValues } from './data';
+import {
+  getPersistedMeta,
+  getPersistedValues,
+  setPersistedMeta,
+} from './persistence';
+
+jest.mock('electron', () => ({
+  app: {
+    getPath: jest.fn().mockReturnValue('/user/data'),
+    getVersion: jest.fn().mockReturnValue('1.0.0'),
+  },
+}));
+
+jest.mock('electron-store', () => {
+  return jest.fn(() => ({
+    store: {},
+    set: jest.fn(),
+  }));
+});
 
 jest.mock('../../store');
+
+jest.mock('./persistence', () => ({
+  getPersistedValues: jest.fn().mockReturnValue({}),
+  persistValues: jest.fn(),
+  // Literal 1 matches MENU_BAR_DEFAULT_REVISION (jest.mock factories are hoisted).
+  getPersistedMeta: jest.fn().mockReturnValue(1),
+  setPersistedMeta: jest.fn(),
+}));
+
+jest.mock('fs', () => ({
+  promises: {
+    readFile: jest.fn().mockRejectedValue(new Error('File not found')),
+    unlink: jest.fn().mockResolvedValue(undefined),
+  },
+}));
+
+jest.mock('electron', () => ({
+  app: {
+    getPath: jest.fn().mockReturnValue('/user/data'),
+    getVersion: jest.fn().mockReturnValue('0.0.0'),
+  },
+}));
+
+jest.mock('../../logging', () => ({
+  logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn() },
+}));
 
 const mockDispatch = jest.fn();
 const mockSelect = jest.fn();
@@ -11,12 +57,15 @@ beforeEach(() => {
   jest.clearAllMocks();
   (store.dispatch as jest.Mock).mockImplementation(mockDispatch);
   (store.select as jest.Mock).mockImplementation(mockSelect);
+  (getPersistedValues as jest.Mock).mockReturnValue({});
+  (getPersistedMeta as jest.Mock).mockReturnValue(MENU_BAR_DEFAULT_REVISION);
 });
 
 describe('mergePersistableValues', () => {
   const mockInitialValues = {
     isMenuBarEnabled: true,
     isSideBarEnabled: true,
+    navigationLayout: 'tabs' as const,
     rootWindowState: {
       focused: true,
       visible: true,
@@ -30,33 +79,31 @@ describe('mergePersistableValues', () => {
 
   beforeEach(() => {
     mockSelect.mockReturnValue(mockInitialValues);
-
-    jest.doMock('./persistence', () => ({
-      getPersistedValues: jest.fn().mockReturnValue({}),
-    }));
-
-    jest.doMock('fs', () => ({
-      promises: {
-        readFile: jest.fn().mockRejectedValue(new Error('File not found')),
-        unlink: jest.fn().mockResolvedValue(undefined),
-      },
-    }));
-
-    jest.doMock('electron', () => ({
-      app: {
-        getPath: jest.fn().mockReturnValue('/user/data'),
-      },
-    }));
   });
 
-  describe('menubar and sidebar recovery mechanism', () => {
-    it('should enable sidebar when both menubar and sidebar are disabled', async () => {
+  describe('menu bar settings (no layout coupling)', () => {
+    const originalPlatform = process.platform;
+
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', {
+        value: originalPlatform,
+        writable: true,
+        configurable: true,
+      });
+    });
+
+    it('preserves isMenuBarEnabled=false on Linux with tabs layout (no recovery force-on)', async () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'linux',
+        writable: true,
+        configurable: true,
+      });
       const localStorage = {};
 
-      mockSelect.mockReturnValueOnce({
+      mockSelect.mockReturnValue({
         ...mockInitialValues,
         isMenuBarEnabled: false,
-        isSideBarEnabled: false,
+        navigationLayout: 'tabs',
       });
 
       await mergePersistableValues(localStorage);
@@ -65,38 +112,22 @@ describe('mergePersistableValues', () => {
         type: APP_SETTINGS_LOADED,
         payload: expect.objectContaining({
           isMenuBarEnabled: false,
-          isSideBarEnabled: true,
         }),
       });
     });
 
-    it('should not modify settings when menubar is enabled and sidebar is disabled', async () => {
+    it('preserves isMenuBarEnabled=false on Windows with tabs layout', async () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'win32',
+        writable: true,
+        configurable: true,
+      });
       const localStorage = {};
 
-      mockSelect.mockReturnValueOnce({
-        ...mockInitialValues,
-        isMenuBarEnabled: true,
-        isSideBarEnabled: false,
-      });
-
-      await mergePersistableValues(localStorage);
-
-      expect(mockDispatch).toHaveBeenCalledWith({
-        type: APP_SETTINGS_LOADED,
-        payload: expect.objectContaining({
-          isMenuBarEnabled: true,
-          isSideBarEnabled: false,
-        }),
-      });
-    });
-
-    it('should not modify settings when sidebar is enabled and menubar is disabled', async () => {
-      const localStorage = {};
-
-      mockSelect.mockReturnValueOnce({
+      mockSelect.mockReturnValue({
         ...mockInitialValues,
         isMenuBarEnabled: false,
-        isSideBarEnabled: true,
+        navigationLayout: 'tabs',
       });
 
       await mergePersistableValues(localStorage);
@@ -105,29 +136,61 @@ describe('mergePersistableValues', () => {
         type: APP_SETTINGS_LOADED,
         payload: expect.objectContaining({
           isMenuBarEnabled: false,
-          isSideBarEnabled: true,
         }),
       });
     });
 
-    it('should not modify settings when both menubar and sidebar are enabled', async () => {
-      const localStorage = {};
-
-      mockSelect.mockReturnValueOnce({
+    it('one-shot: forces isMenuBarEnabled off on Linux when menuBarDefaultRevision is stale', async () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'linux',
+        writable: true,
+        configurable: true,
+      });
+      (getPersistedMeta as jest.Mock).mockReturnValue(0);
+      mockSelect.mockReturnValue({
         ...mockInitialValues,
         isMenuBarEnabled: true,
-        isSideBarEnabled: true,
+        navigationLayout: 'tabs',
       });
 
-      await mergePersistableValues(localStorage);
+      await mergePersistableValues({});
+
+      expect(mockDispatch).toHaveBeenCalledWith({
+        type: APP_SETTINGS_LOADED,
+        payload: expect.objectContaining({
+          isMenuBarEnabled: false,
+        }),
+      });
+      expect(setPersistedMeta).toHaveBeenCalledWith(
+        'menuBarDefaultRevision',
+        MENU_BAR_DEFAULT_REVISION
+      );
+    });
+
+    it('one-shot: does not re-force isMenuBarEnabled after revision is applied', async () => {
+      Object.defineProperty(process, 'platform', {
+        value: 'linux',
+        writable: true,
+        configurable: true,
+      });
+      (getPersistedMeta as jest.Mock).mockReturnValue(
+        MENU_BAR_DEFAULT_REVISION
+      );
+      mockSelect.mockReturnValue({
+        ...mockInitialValues,
+        isMenuBarEnabled: true,
+        navigationLayout: 'tabs',
+      });
+
+      await mergePersistableValues({});
 
       expect(mockDispatch).toHaveBeenCalledWith({
         type: APP_SETTINGS_LOADED,
         payload: expect.objectContaining({
           isMenuBarEnabled: true,
-          isSideBarEnabled: true,
         }),
       });
+      expect(setPersistedMeta).not.toHaveBeenCalled();
     });
   });
 
@@ -137,10 +200,11 @@ describe('mergePersistableValues', () => {
         autohideMenu: 'true',
       };
 
-      mockSelect.mockReturnValueOnce({
+      mockSelect.mockReturnValue({
         ...mockInitialValues,
         isMenuBarEnabled: false,
         isSideBarEnabled: false,
+        navigationLayout: 'sidebar',
       });
 
       await mergePersistableValues(localStorage);
@@ -149,7 +213,7 @@ describe('mergePersistableValues', () => {
         type: APP_SETTINGS_LOADED,
         payload: expect.objectContaining({
           isMenuBarEnabled: false,
-          isSideBarEnabled: true,
+          isSideBarEnabled: false,
         }),
       });
     });
@@ -160,10 +224,11 @@ describe('mergePersistableValues', () => {
         'autohideMenu': 'true',
       };
 
-      mockSelect.mockReturnValueOnce({
+      mockSelect.mockReturnValue({
         ...mockInitialValues,
         isMenuBarEnabled: false,
         isSideBarEnabled: false,
+        navigationLayout: 'sidebar',
       });
 
       await mergePersistableValues(localStorage);
@@ -172,7 +237,7 @@ describe('mergePersistableValues', () => {
         type: APP_SETTINGS_LOADED,
         payload: expect.objectContaining({
           isMenuBarEnabled: false,
-          isSideBarEnabled: true,
+          isSideBarEnabled: false,
         }),
       });
     });

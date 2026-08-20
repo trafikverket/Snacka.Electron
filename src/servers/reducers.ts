@@ -16,6 +16,7 @@ import {
   WEBVIEW_TITLE_CHANGED,
   WEBVIEW_UNREAD_CHANGED,
   WEBVIEW_USER_LOGGED_IN,
+  WEBVIEW_USER_ROLES_CHANGED,
   WEBVIEW_FAVICON_CHANGED,
   WEBVIEW_DID_START_LOADING,
   WEBVIEW_DID_FAIL_LOAD,
@@ -56,6 +57,7 @@ type ServersActionTypes =
   | ActionOf<typeof WEBVIEW_TITLE_CHANGED>
   | ActionOf<typeof WEBVIEW_UNREAD_CHANGED>
   | ActionOf<typeof WEBVIEW_USER_LOGGED_IN>
+  | ActionOf<typeof WEBVIEW_USER_ROLES_CHANGED>
   | ActionOf<typeof WEBVIEW_ALLOWED_REDIRECTS_CHANGED>
   | ActionOf<typeof WEBVIEW_FAVICON_CHANGED>
   | ActionOf<typeof APP_SETTINGS_LOADED>
@@ -75,6 +77,16 @@ type ServersActionTypes =
   | ActionOf<typeof WEBVIEW_PAGE_TITLE_CHANGED>
   | ActionOf<typeof SIDE_BAR_SERVER_REMOVE>;
 
+// Returns the original object (preserving identity) when the patch would not
+// change any field — a new array identity here re-renders every
+// server-subscribed component, so no-op actions must not mint one.
+const patchServer = (server: Server, patch: Server): Server => {
+  const changed = Object.entries(patch).some(
+    ([key, value]) => !Object.is(server[key as keyof Server], value)
+  );
+  return changed ? { ...server, ...patch } : server;
+};
+
 const upsert = (state: Server[], server: Server): Server[] => {
   const index = state.findIndex(({ url }) => url === server.url);
 
@@ -82,9 +94,10 @@ const upsert = (state: Server[], server: Server): Server[] => {
     return [...state, server];
   }
 
-  return state.map((_server, i) =>
-    i === index ? { ..._server, ...server } : _server
-  );
+  const patched = patchServer(state[index], server);
+  return patched === state[index]
+    ? state
+    : state.map((_server, i) => (i === index ? patched : _server));
 };
 
 const update = (state: Server[], server: Server): Server[] => {
@@ -94,9 +107,10 @@ const update = (state: Server[], server: Server): Server[] => {
     return state;
   }
 
-  return state.map((_server, i) =>
-    i === index ? { ..._server, ...server } : _server
-  );
+  const patched = patchServer(state[index], server);
+  return patched === state[index]
+    ? state
+    : state.map((_server, i) => (i === index ? patched : _server));
 };
 
 export const servers: Reducer<Server[], ServersActionTypes> = (
@@ -159,7 +173,7 @@ export const servers: Reducer<Server[], ServersActionTypes> = (
 
     case WEBVIEW_SERVER_UNIQUE_ID_UPDATED: {
       const { url, uniqueID } = action.payload;
-      return upsert(state, { url, uniqueID });
+      return update(state, { url, uniqueID });
     }
 
     case WEBVIEW_SERVER_IS_SUPPORTED_VERSION: {
@@ -172,8 +186,17 @@ export const servers: Reducer<Server[], ServersActionTypes> = (
     }
 
     case WEBVIEW_SERVER_VERSION_UPDATED: {
-      const { url, version } = action.payload;
-      return upsert(state, { url, version });
+      const { url, version, gitCommitHash } = action.payload;
+      // Only overwrite gitCommitHash when the payload provides one. The same
+      // action is dispatched from the renderer preload's setVersion without a
+      // hash; preserving the value avoids erasing the commit hash captured
+      // from /api/info, which the SupportedVersionDialog needs for sha-based
+      // exception matching.
+      const patch: Server =
+        gitCommitHash !== undefined
+          ? { url, version, gitCommitHash }
+          : { url, version };
+      return update(state, patch);
     }
 
     case WEBVIEW_UNREAD_CHANGED: {
@@ -184,6 +207,11 @@ export const servers: Reducer<Server[], ServersActionTypes> = (
     case WEBVIEW_USER_LOGGED_IN: {
       const { url, userLoggedIn } = action.payload;
       return upsert(state, { url, userLoggedIn });
+    }
+
+    case WEBVIEW_USER_ROLES_CHANGED: {
+      const { url, userRoles } = action.payload;
+      return upsert(state, { url, userRoles });
     }
 
     case WEBVIEW_ALLOWED_REDIRECTS_CHANGED: {
@@ -203,7 +231,7 @@ export const servers: Reducer<Server[], ServersActionTypes> = (
 
     case WEBVIEW_GIT_COMMIT_HASH_CHANGED: {
       const { url, gitCommitHash } = action.payload;
-      return upsert(state, { url, gitCommitHash });
+      return update(state, { url, gitCommitHash });
     }
 
     case WEBVIEW_FAVICON_CHANGED: {

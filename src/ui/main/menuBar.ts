@@ -6,27 +6,43 @@ import i18next from 'i18next';
 import { createSelector, createStructuredSelector } from 'reselect';
 
 import { relaunchApp } from '../../app/main/app';
+import { DOWNLOADS_SIMULATION_REQUESTED } from '../../downloads/actions';
 import { CERTIFICATES_CLEARED } from '../../navigation/actions';
 import { dispatch, select, Service } from '../../store';
 import type { RootState } from '../../store/rootReducer';
+import {
+  UPDATES_CHECK_FOR_UPDATES_REQUESTED,
+  UPDATES_SIMULATION_REQUESTED,
+} from '../../updates/actions';
 import * as urls from '../../urls';
 import { openExternal } from '../../utils/browserLauncher';
 import { openVideoCallWebviewDevTools } from '../../videoCallWindow/ipc';
 import {
+  APP_MENU_TRIGGERED,
   CLEAR_CACHE_TRIGGERED,
   MENU_BAR_ABOUT_CLICKED,
   MENU_BAR_ADD_NEW_SERVER_CLICKED,
   MENU_BAR_SELECT_SERVER_CLICKED,
+  MENU_BAR_SET_NAVIGATION_LAYOUT_CLICKED,
   MENU_BAR_TOGGLE_IS_MENU_BAR_ENABLED_CLICKED,
   MENU_BAR_TOGGLE_IS_SHOW_WINDOW_ON_UNREAD_CHANGED_ENABLED_CLICKED,
-  MENU_BAR_TOGGLE_IS_SIDE_BAR_ENABLED_CLICKED,
   MENU_BAR_TOGGLE_IS_TRAY_ICON_ENABLED_CLICKED,
   MENU_BAR_TOGGLE_IS_DEVELOPER_MODE_ENABLED_CLICKED,
   MENU_BAR_TOGGLE_IS_VIDEO_CALL_DEVTOOLS_AUTO_OPEN_ENABLED_CLICKED,
+  OPEN_SERVER_INFO_MODAL,
+  SERVER_CONTEXT_MENU_TRIGGERED,
+  SERVER_SWITCHER_MENU_TRIGGERED,
+  SIDE_BAR_ADD_NEW_SERVER_CLICKED,
   SIDE_BAR_DOWNLOADS_BUTTON_CLICKED,
+  SIDE_BAR_SERVER_COPY_URL,
+  SIDE_BAR_SERVER_FORCE_RELOAD,
+  SIDE_BAR_SERVER_OPEN_DEV_TOOLS,
+  SIDE_BAR_SERVER_RELOAD,
+  SIDE_BAR_SERVER_REMOVE,
   SIDE_BAR_SETTINGS_BUTTON_CLICKED,
   WEBVIEW_SERVER_RELOADED,
 } from '../actions';
+import { formatServerTitle } from '../components/utils/formatServerTitle';
 import { askForAppDataReset } from './dialogs';
 import { getRootWindow } from './rootWindow';
 import { getWebContentsByServerUrl } from './serverView';
@@ -38,21 +54,150 @@ const on = (
   getMenuItems: () => MenuItemConstructorOptions[]
 ): MenuItemConstructorOptions[] => (condition ? getMenuItems() : []);
 
+const createSimulationMenuItems = (): MenuItemConstructorOptions[] => [
+  {
+    id: 'simulateUpdate',
+    label: t('menus.simulateUpdate'),
+    click: async () => {
+      const browserWindow = await getRootWindow();
+
+      if (!browserWindow.isVisible()) {
+        browserWindow.showInactive();
+      }
+      browserWindow.focus();
+      dispatch({ type: UPDATES_SIMULATION_REQUESTED });
+    },
+  },
+  {
+    id: 'simulateDownload',
+    label: t('menus.simulateDownload'),
+    click: async () => {
+      const browserWindow = await getRootWindow();
+
+      if (!browserWindow.isVisible()) {
+        browserWindow.showInactive();
+      }
+      browserWindow.focus();
+      dispatch({ type: DOWNLOADS_SIMULATION_REQUESTED });
+    },
+  },
+];
+
+// The layout shortcut advances through tabs → sidebar → hidden → tabs. It is
+// shown on whichever radio is the *next* step, so pressing it (or clicking that
+// item) moves the cycle forward one place.
+const NAVIGATION_LAYOUT_CYCLE = ['tabs', 'sidebar', 'hidden'] as const;
+
+const nextNavigationLayoutAccelerator = (
+  current: RootState['navigationLayout'],
+  layout: (typeof NAVIGATION_LAYOUT_CYCLE)[number]
+): string | undefined => {
+  const nextLayout =
+    NAVIGATION_LAYOUT_CYCLE[
+      (NAVIGATION_LAYOUT_CYCLE.indexOf(current) + 1) %
+        NAVIGATION_LAYOUT_CYCLE.length
+    ];
+  if (layout !== nextLayout) {
+    return undefined;
+  }
+  return process.platform === 'darwin' ? 'Shift+Command+S' : 'Ctrl+Shift+S';
+};
+
 const selectAddServersDeps = createStructuredSelector({
   isAddNewServersEnabled: ({ isAddNewServersEnabled }: RootState) =>
     isAddNewServersEnabled,
 });
 
-const createAppMenu = createSelector(
+const createAboutMenuItem = (): MenuItemConstructorOptions => ({
+  id: 'about',
+  label: t('menus.about', { appName: app.name }),
+  click: async () => {
+    const browserWindow = await getRootWindow();
+
+    if (!browserWindow.isVisible()) {
+      browserWindow.showInactive();
+    }
+    browserWindow.focus();
+    dispatch({ type: MENU_BAR_ABOUT_CLICKED });
+  },
+});
+
+const createAddNewServerMenuItem = (): MenuItemConstructorOptions => ({
+  id: 'addNewServer',
+  label: t('menus.addNewServer'),
+  accelerator: 'CommandOrControl+N',
+  click: async () => {
+    const browserWindow = await getRootWindow();
+
+    if (!browserWindow.isVisible()) {
+      browserWindow.showInactive();
+    }
+    browserWindow.focus();
+    dispatch({ type: MENU_BAR_ADD_NEW_SERVER_CLICKED });
+  },
+});
+
+const createDisableGpuMenuItem = (): MenuItemConstructorOptions => ({
+  id: 'disableGpu',
+  label: t('menus.disableGpu'),
+  enabled: !app.commandLine.hasSwitch('disable-gpu'),
+  click: () => {
+    relaunchApp('--disable-gpu');
+  },
+});
+
+const createQuitMenuItem = (): MenuItemConstructorOptions => ({
+  id: 'quit',
+  label: t('menus.quit', { appName: app.name }),
+  accelerator: 'CommandOrControl+Q',
+  click: () => {
+    app.quit();
+  },
+});
+
+const selectAdjacentServer = async (
+  servers: RootState['servers'],
+  currentView: RootState['currentView'],
+  direction: 1 | -1
+): Promise<void> => {
+  if (servers.length === 0) {
+    return;
+  }
+
+  const currentIndex =
+    typeof currentView === 'object'
+      ? servers.findIndex((server) => server.url === currentView.url)
+      : -1;
+  const nextIndex =
+    currentIndex === -1
+      ? 0
+      : (currentIndex + direction + servers.length) % servers.length;
+
+  const browserWindow = await getRootWindow();
+
+  if (!browserWindow.isVisible()) {
+    browserWindow.showInactive();
+  }
+  browserWindow.focus();
+  dispatch({
+    type: MENU_BAR_SELECT_SERVER_CLICKED,
+    payload: servers[nextIndex].url,
+  });
+};
+
+export const createAppMenu = createSelector(
   selectAddServersDeps,
   ({ isAddNewServersEnabled }): MenuItemConstructorOptions => ({
     id: 'appMenu',
     label: process.platform === 'darwin' ? app.name : t('menus.fileMenu'),
     submenu: [
       ...on(process.platform === 'darwin', () => [
+        createAboutMenuItem(),
+        { type: 'separator' },
         {
-          id: 'about',
-          label: t('menus.about', { appName: app.name }),
+          id: 'preferences',
+          label: t('menus.preferences'),
+          accelerator: 'Command+,',
           click: async () => {
             const browserWindow = await getRootWindow();
 
@@ -60,7 +205,7 @@ const createAppMenu = createSelector(
               browserWindow.showInactive();
             }
             browserWindow.focus();
-            dispatch({ type: MENU_BAR_ABOUT_CLICKED });
+            dispatch({ type: SIDE_BAR_SETTINGS_BUTTON_CLICKED });
           },
         },
         { type: 'separator' },
@@ -88,44 +233,17 @@ const createAppMenu = createSelector(
         { type: 'separator' },
       ]),
       ...on(process.platform !== 'darwin' && isAddNewServersEnabled, () => [
-        {
-          id: 'addNewServer',
-          label: t('menus.addNewServer'),
-          accelerator: 'CommandOrControl+N',
-          click: async () => {
-            const browserWindow = await getRootWindow();
-
-            if (!browserWindow.isVisible()) {
-              browserWindow.showInactive();
-            }
-            browserWindow.focus();
-            dispatch({ type: MENU_BAR_ADD_NEW_SERVER_CLICKED });
-          },
-        },
+        createAddNewServerMenuItem(),
         { type: 'separator' },
       ]),
-      {
-        id: 'disableGpu',
-        label: t('menus.disableGpu'),
-        enabled: !app.commandLine.hasSwitch('disable-gpu'),
-        click: () => {
-          relaunchApp('--disable-gpu');
-        },
-      },
+      createDisableGpuMenuItem(),
       { type: 'separator' },
-      {
-        id: 'quit',
-        label: t('menus.quit', { appName: app.name }),
-        accelerator: 'CommandOrControl+Q',
-        click: () => {
-          app.quit();
-        },
-      },
+      createQuitMenuItem(),
     ],
   })
 );
 
-const createEditMenu = createSelector(
+export const createEditMenu = createSelector(
   (_: RootState) => undefined,
   (): MenuItemConstructorOptions => ({
     id: 'editMenu',
@@ -168,10 +286,10 @@ const createEditMenu = createSelector(
 
 const selectViewDeps = createStructuredSelector({
   currentView: ({ currentView }: RootState) => currentView,
-  isSideBarEnabled: ({ isSideBarEnabled }: RootState) => isSideBarEnabled,
   isTrayIconEnabled: ({ isTrayIconEnabled }: RootState) => isTrayIconEnabled,
   isMenuBarEnabled: ({ isMenuBarEnabled }: RootState) => isMenuBarEnabled,
   rootWindowState: ({ rootWindowState }: RootState) => rootWindowState,
+  navigationLayout: ({ navigationLayout }: RootState) => navigationLayout,
 });
 
 const getCurrentView = async () => {
@@ -193,14 +311,14 @@ const getCurrentViewWebcontents = async () => {
   return getWebContentsByServerUrl(url);
 };
 
-const createViewMenu = createSelector(
+export const createViewMenu = createSelector(
   selectViewDeps,
   ({
     currentView,
-    isSideBarEnabled,
     isTrayIconEnabled,
     isMenuBarEnabled,
     rootWindowState,
+    navigationLayout,
   }): MenuItemConstructorOptions => ({
     id: 'viewMenu',
     label: t('menus.viewMenu'),
@@ -328,9 +446,7 @@ const createViewMenu = createSelector(
           label: t('menus.showMenuBar'),
           type: 'checkbox',
           checked: isMenuBarEnabled,
-          enabled: !isMenuBarEnabled || isSideBarEnabled,
-          accelerator:
-            process.platform === 'darwin' ? 'Shift+Command+M' : 'Ctrl+Shift+M',
+          accelerator: 'Ctrl+Shift+M',
           click: async ({ checked }) => {
             const browserWindow = await getRootWindow();
 
@@ -345,15 +461,19 @@ const createViewMenu = createSelector(
           },
         },
       ]),
+      { type: 'separator' },
       {
-        id: 'showServerList',
-        label: t('menus.showServerList'),
-        type: 'checkbox',
-        checked: isSideBarEnabled,
-        enabled: !isSideBarEnabled || isMenuBarEnabled,
-        accelerator:
-          process.platform === 'darwin' ? 'Shift+Command+S' : 'Ctrl+Shift+S',
-        click: async ({ checked }) => {
+        id: 'workspaceSwitcherHeader',
+        label: t('menus.workspaceSwitcher'),
+        enabled: false,
+      },
+      {
+        id: 'workspaceTabs',
+        label: t('menus.workspaceTabs'),
+        type: 'radio',
+        checked: navigationLayout === 'tabs',
+        accelerator: nextNavigationLayoutAccelerator(navigationLayout, 'tabs'),
+        click: async () => {
           const browserWindow = await getRootWindow();
 
           if (!browserWindow.isVisible()) {
@@ -361,8 +481,52 @@ const createViewMenu = createSelector(
           }
           browserWindow.focus();
           dispatch({
-            type: MENU_BAR_TOGGLE_IS_SIDE_BAR_ENABLED_CLICKED,
-            payload: checked,
+            type: MENU_BAR_SET_NAVIGATION_LAYOUT_CLICKED,
+            payload: 'tabs',
+          });
+        },
+      },
+      {
+        id: 'workspaceBar',
+        label: t('menus.workspaceBar'),
+        type: 'radio',
+        checked: navigationLayout === 'sidebar',
+        accelerator: nextNavigationLayoutAccelerator(
+          navigationLayout,
+          'sidebar'
+        ),
+        click: async () => {
+          const browserWindow = await getRootWindow();
+
+          if (!browserWindow.isVisible()) {
+            browserWindow.showInactive();
+          }
+          browserWindow.focus();
+          dispatch({
+            type: MENU_BAR_SET_NAVIGATION_LAYOUT_CLICKED,
+            payload: 'sidebar',
+          });
+        },
+      },
+      {
+        id: 'workspaceHidden',
+        label: t('menus.workspaceHidden'),
+        type: 'radio',
+        checked: navigationLayout === 'hidden',
+        accelerator: nextNavigationLayoutAccelerator(
+          navigationLayout,
+          'hidden'
+        ),
+        click: async () => {
+          const browserWindow = await getRootWindow();
+
+          if (!browserWindow.isVisible()) {
+            browserWindow.showInactive();
+          }
+          browserWindow.focus();
+          dispatch({
+            type: MENU_BAR_SET_NAVIGATION_LAYOUT_CLICKED,
+            payload: 'hidden',
           });
         },
       },
@@ -422,9 +586,11 @@ const selectWindowDeps = createStructuredSelector({
   }: RootState) => isShowWindowOnUnreadChangedEnabled,
   isAddNewServersEnabled: ({ isAddNewServersEnabled }: RootState) =>
     isAddNewServersEnabled,
+  isDeveloperModeEnabled: ({ isDeveloperModeEnabled }: RootState) =>
+    isDeveloperModeEnabled,
 });
 
-const createWindowMenu = createSelector(
+export const createWindowMenu = createSelector(
   selectWindowDeps,
   ({
     servers,
@@ -481,6 +647,24 @@ const createWindowMenu = createSelector(
             },
           })
         ),
+        {
+          id: 'nextWorkspace',
+          label: t('menus.nextWorkspace'),
+          visible: false,
+          accelerator: 'CommandOrControl+Tab',
+          click: async () => {
+            await selectAdjacentServer(servers, currentView, 1);
+          },
+        },
+        {
+          id: 'previousWorkspace',
+          label: t('menus.previousWorkspace'),
+          visible: false,
+          accelerator: 'CommandOrControl+Shift+Tab',
+          click: async () => {
+            await selectAdjacentServer(servers, currentView, -1);
+          },
+        },
         { type: 'separator' },
       ]),
       {
@@ -502,6 +686,7 @@ const createWindowMenu = createSelector(
         id: 'settings',
         label: t('menus.settings'),
         checked: currentView === 'settings',
+        accelerator: 'CommandOrControl+,',
         click: async () => {
           const browserWindow = await getRootWindow();
 
@@ -555,7 +740,7 @@ const selectHelpDeps = createStructuredSelector({
   }: RootState) => isVideoCallDevtoolsAutoOpenEnabled,
 });
 
-const createHelpMenu = createSelector(
+export const createHelpMenu = createSelector(
   selectHelpDeps,
   ({
     isDeveloperModeEnabled,
@@ -605,7 +790,11 @@ const createHelpMenu = createSelector(
         label: t('menus.toggleDevTools'),
         accelerator: 'CommandOrControl+Shift+D',
         click: async () => {
-          const browserWindow = await getRootWindow();
+          // Target the focused window (e.g. the video call window) so DevTools
+          // open where the user is looking; fall back to the main window when
+          // nothing is focused.
+          const browserWindow =
+            BrowserWindow.getFocusedWindow() ?? (await getRootWindow());
 
           if (!browserWindow.isVisible()) {
             browserWindow.showInactive();
@@ -654,6 +843,7 @@ const createHelpMenu = createSelector(
           });
         },
       },
+      ...on(isDeveloperModeEnabled, createSimulationMenuItems),
       {
         id: 'videoCallToolsSubmenu',
         label: t('menus.videoCallTools'),
@@ -767,7 +957,7 @@ const createHelpMenu = createSelector(
   })
 );
 
-const selectMenuBarTemplate = createSelector(
+export const selectMenuBarTemplate = createSelector(
   [
     createAppMenu,
     createEditMenu,
@@ -778,10 +968,292 @@ const selectMenuBarTemplate = createSelector(
   (...menus) => menus
 );
 
-const selectMenuBarTemplateAsJson = createSelector(
-  (_state: any) => selectMenuBarTemplate,
-  (template: unknown) => JSON.stringify(template)
+export const selectMenuBarTemplateAsJson = createSelector(
+  selectMenuBarTemplate,
+  (template) => JSON.stringify(template)
 );
+
+const createRocketChatMenu = createSelector(
+  (_: RootState) => undefined,
+  (): MenuItemConstructorOptions => ({
+    id: 'rocketChatMenu',
+    label: app.name,
+    submenu: [
+      createAboutMenuItem(),
+      { type: 'separator' },
+      createDisableGpuMenuItem(),
+    ],
+  })
+);
+
+const createFileMenu = createSelector(
+  selectAddServersDeps,
+  ({ isAddNewServersEnabled }): MenuItemConstructorOptions => ({
+    id: 'fileMenu',
+    label: t('menus.fileMenu'),
+    submenu: [
+      ...on(isAddNewServersEnabled, () => [createAddNewServerMenuItem()]),
+    ],
+  })
+);
+
+export const selectAppMenuPopupTemplate = createSelector(
+  [
+    createRocketChatMenu,
+    createFileMenu,
+    createEditMenu,
+    createViewMenu,
+    createWindowMenu,
+    createHelpMenu,
+    ({ isDeveloperModeEnabled }: RootState) => isDeveloperModeEnabled,
+  ],
+  (
+    rocketChatMenu,
+    fileMenu,
+    editMenu,
+    viewMenu,
+    windowMenu,
+    helpMenu,
+    isDeveloperModeEnabled
+  ): MenuItemConstructorOptions[] => {
+    const settingsItem: MenuItemConstructorOptions = {
+      id: 'settings',
+      label: t('menus.settings'),
+      accelerator: 'CommandOrControl+,',
+      click: () => {
+        dispatch({ type: SIDE_BAR_SETTINGS_BUTTON_CLICKED });
+      },
+    };
+    const downloadsItem: MenuItemConstructorOptions = {
+      id: 'downloads',
+      label: t('menus.downloads'),
+      accelerator: 'CommandOrControl+D',
+      click: () => {
+        dispatch({ type: SIDE_BAR_DOWNLOADS_BUTTON_CLICKED });
+      },
+    };
+    const checkForUpdatesItem: MenuItemConstructorOptions = {
+      id: 'checkForUpdates',
+      label: t('menus.checkForUpdates'),
+      click: () => {
+        dispatch({ type: UPDATES_CHECK_FOR_UPDATES_REQUESTED });
+      },
+    };
+
+    // On macOS the full menu bar (Rocket.Chat, File, Edit, View, Window, Help)
+    // already lives in the system menu bar and quitting is available there, so
+    // the meatball popup only needs the desktop-app extras.
+    if (process.platform === 'darwin') {
+      return [
+        settingsItem,
+        downloadsItem,
+        checkForUpdatesItem,
+        ...on(isDeveloperModeEnabled, () => [
+          { type: 'separator' },
+          ...createSimulationMenuItems(),
+        ]),
+      ];
+    }
+
+    return [
+      rocketChatMenu,
+      fileMenu,
+      editMenu,
+      viewMenu,
+      {
+        ...windowMenu,
+        submenu: (windowMenu.submenu as MenuItemConstructorOptions[]).filter(
+          (item) => item.id !== 'settings' && item.id !== 'downloads'
+        ),
+      },
+      helpMenu,
+      { type: 'separator' },
+      settingsItem,
+      downloadsItem,
+      checkForUpdatesItem,
+      ...on(isDeveloperModeEnabled, () => [
+        { type: 'separator' },
+        ...createSimulationMenuItems(),
+      ]),
+      { type: 'separator' },
+      createQuitMenuItem(),
+    ];
+  }
+);
+
+// Native popup used by the server switcher (hidden layout). Lists servers with
+// their ⌘/Ctrl+N shortcuts, then the desktop-app extras — no icons, matching
+// the platform's native menus.
+export const selectServerSwitcherMenuTemplate = createSelector(
+  selectWindowDeps,
+  ({
+    servers,
+    currentView,
+    isAddNewServersEnabled,
+    isDeveloperModeEnabled,
+  }): MenuItemConstructorOptions[] => {
+    const serverItems = servers.map((server, i): MenuItemConstructorOptions => {
+      const isActive =
+        typeof currentView === 'object' && currentView.url === server.url;
+      const mentionCount =
+        typeof server.badge === 'number' && server.badge > 0
+          ? server.badge
+          : undefined;
+
+      let label = formatServerTitle(server.title ?? server.url).replace(
+        /&/g,
+        '&&'
+      );
+      if (mentionCount !== undefined) {
+        label += ` (${mentionCount})`;
+      } else if (server.badge === '•') {
+        label += ' •';
+      }
+
+      return {
+        id: server.url,
+        type: isActive ? 'checkbox' : 'normal',
+        checked: isActive,
+        label,
+        accelerator: i < 9 ? `CommandOrControl+${i + 1}` : undefined,
+        click: () => {
+          dispatch({
+            type: MENU_BAR_SELECT_SERVER_CLICKED,
+            payload: server.url,
+          });
+        },
+      };
+    });
+
+    return [
+      ...serverItems,
+      ...on(serverItems.length > 0, () => [
+        { type: 'separator' } as MenuItemConstructorOptions,
+      ]),
+      {
+        id: 'settings',
+        label: t('menus.settings'),
+        accelerator: 'CommandOrControl+,',
+        click: () => {
+          dispatch({ type: SIDE_BAR_SETTINGS_BUTTON_CLICKED });
+        },
+      },
+      {
+        id: 'downloads',
+        label: t('menus.downloads'),
+        accelerator: 'CommandOrControl+D',
+        click: () => {
+          dispatch({ type: SIDE_BAR_DOWNLOADS_BUTTON_CLICKED });
+        },
+      },
+      ...on(isAddNewServersEnabled, () => [
+        {
+          id: 'addNewServer',
+          label: t('menus.addNewServer'),
+          accelerator: 'CommandOrControl+N',
+          click: () => {
+            dispatch({ type: MENU_BAR_ADD_NEW_SERVER_CLICKED });
+          },
+        } as MenuItemConstructorOptions,
+      ]),
+      {
+        id: 'checkForUpdates',
+        label: t('menus.checkForUpdates'),
+        click: () => {
+          dispatch({ type: UPDATES_CHECK_FOR_UPDATES_REQUESTED });
+        },
+      },
+      ...on(isDeveloperModeEnabled, () => [
+        { type: 'separator' } as MenuItemConstructorOptions,
+        ...createSimulationMenuItems(),
+      ]),
+    ];
+  }
+);
+
+// Native per-server actions (reload, remove, …) shown when a server tab or the
+// titlebar switcher is right-clicked. Reads the server from state by url so the
+// caller only needs to pass the url + coordinates.
+export const getServerContextMenuTemplate = (
+  url: string,
+  servers: RootState['servers'],
+  isAddNewServersEnabled: boolean
+): MenuItemConstructorOptions[] => {
+  const server = servers.find((candidate) => candidate.url === url);
+
+  return [
+    {
+      id: 'reload',
+      label: t('sidebar.item.reload'),
+      accelerator: 'CommandOrControl+R',
+      click: () => {
+        dispatch({ type: SIDE_BAR_SERVER_RELOAD, payload: url });
+      },
+    },
+    {
+      id: 'reloadClearingCache',
+      label: t('sidebar.item.reloadClearingCache'),
+      click: () => {
+        dispatch({ type: SIDE_BAR_SERVER_FORCE_RELOAD, payload: url });
+      },
+    },
+    {
+      id: 'copyCurrentUrl',
+      label: t('sidebar.item.copyCurrentUrl'),
+      click: () => {
+        dispatch({ type: SIDE_BAR_SERVER_COPY_URL, payload: url });
+      },
+    },
+    {
+      id: 'openDevTools',
+      label: t('sidebar.item.openDevTools'),
+      accelerator:
+        process.platform === 'darwin' ? 'Command+Alt+I' : 'Ctrl+Shift+I',
+      click: () => {
+        dispatch({ type: SIDE_BAR_SERVER_OPEN_DEV_TOOLS, payload: url });
+      },
+    },
+    {
+      id: 'serverInfo',
+      label: t('sidebar.item.serverInfo'),
+      click: () => {
+        dispatch({
+          type: OPEN_SERVER_INFO_MODAL,
+          payload: {
+            url,
+            version: server?.version,
+            exchangeUrl: server?.outlookCredentials?.serverUrl,
+            isSupportedVersion: server?.isSupportedVersion,
+            supportedVersionsSource: server?.supportedVersionsSource,
+            supportedVersionsFetchState: server?.supportedVersionsFetchState,
+            supportedVersions: server?.supportedVersions,
+          },
+        });
+      },
+    },
+    // Isolate the destructive action in its own section. Native menus can't
+    // color an item, so a separator is the only available emphasis.
+    { type: 'separator' },
+    {
+      id: 'remove',
+      label: t('sidebar.item.remove'),
+      click: () => {
+        dispatch({ type: SIDE_BAR_SERVER_REMOVE, payload: url });
+      },
+    },
+    ...on(isAddNewServersEnabled, () => [
+      { type: 'separator' } as MenuItemConstructorOptions,
+      {
+        id: 'addWorkspace',
+        label: t('sidebar.item.addWorkspace'),
+        accelerator: 'CommandOrControl+N',
+        click: () => {
+          dispatch({ type: SIDE_BAR_ADD_NEW_SERVER_CLICKED });
+        },
+      } as MenuItemConstructorOptions,
+    ]),
+  ];
+};
 
 class MenuBarService extends Service {
   protected initialize(): void {
@@ -794,8 +1266,59 @@ class MenuBarService extends Service {
         return;
       }
 
+      // Windows and Linux share the same model: keep the menu attached for
+      // accelerators, show it permanently when isMenuBarEnabled, otherwise
+      // auto-hide so a solo Alt press reveals it (classic desktop chrome).
+      // isMenuBarEnabled is already a view-menu dependency, so this watcher
+      // re-runs when the toggle flips and re-applies visibility here.
+      const browserWindow = await getRootWindow();
+      const isMenuBarEnabled = select(
+        ({ isMenuBarEnabled }) => isMenuBarEnabled
+      );
+
       Menu.setApplicationMenu(null);
-      (await getRootWindow()).setMenu(menu);
+      browserWindow.setMenu(menu);
+      browserWindow.autoHideMenuBar = !isMenuBarEnabled;
+      browserWindow.setMenuBarVisibility(isMenuBarEnabled);
+    });
+
+    this.listen(APP_MENU_TRIGGERED, async (action) => {
+      const menu = Menu.buildFromTemplate(select(selectAppMenuPopupTemplate));
+      menu.popup({
+        window: await getRootWindow(),
+        x: Math.round(action.payload.x),
+        y: Math.round(action.payload.y),
+      });
+    });
+
+    this.listen(SERVER_SWITCHER_MENU_TRIGGERED, async (action) => {
+      const menu = Menu.buildFromTemplate(
+        select(selectServerSwitcherMenuTemplate)
+      );
+      menu.popup({
+        window: await getRootWindow(),
+        x: Math.round(action.payload.x),
+        y: Math.round(action.payload.y),
+      });
+    });
+
+    this.listen(SERVER_CONTEXT_MENU_TRIGGERED, async (action) => {
+      const servers = select(({ servers }) => servers);
+      const isAddNewServersEnabled = select(
+        ({ isAddNewServersEnabled }) => isAddNewServersEnabled
+      );
+      const menu = Menu.buildFromTemplate(
+        getServerContextMenuTemplate(
+          action.payload.url,
+          servers,
+          isAddNewServersEnabled
+        )
+      );
+      menu.popup({
+        window: await getRootWindow(),
+        x: Math.round(action.payload.x),
+        y: Math.round(action.payload.y),
+      });
     });
   }
 }

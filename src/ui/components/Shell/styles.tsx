@@ -1,19 +1,22 @@
 import { Global, css } from '@emotion/react';
 import styled from '@emotion/styled';
 
-import { isDarwin } from '../../utils/platform';
+import { isDarwin, isLinux } from '../../utils/platform';
 
 type GlobalStylesProps = {
   isTransparentWindowEnabled: boolean;
 };
 
+/** Linux paints the outer window shape in CSS (DWM already rounds Windows). */
+const usesLinuxClientChromeRounding = isLinux;
+
 export const GlobalStyles = ({
   isTransparentWindowEnabled,
 }: GlobalStylesProps) => {
   const backgroundColor =
-    isDarwin && isTransparentWindowEnabled
+    (isDarwin && isTransparentWindowEnabled) || usesLinuxClientChromeRounding
       ? 'transparent'
-      : 'var(--rcx-color-surface-room, #2f343d)';
+      : 'var(--rcx-color-surface-sidebar, #2f343d)';
 
   return (
     <Global
@@ -30,11 +33,29 @@ export const GlobalStyles = ({
           outline-color: transparent;
         }
 
+        html,
+        body,
+        #root {
+          width: 100%;
+          height: 100%;
+          margin: 0;
+          overflow: hidden;
+        }
+
         body {
           -webkit-font-smoothing: antialiased;
-          margin: 0;
           padding: 0;
-          font-family: system-ui;
+          font-family:
+            Inter,
+            -apple-system,
+            BlinkMacSystemFont,
+            'Segoe UI',
+            Roboto,
+            Oxygen,
+            Ubuntu,
+            Cantarell,
+            'Helvetica Neue',
+            sans-serif;
           font-size: 0.875rem;
           line-height: 1rem;
           background-color: ${backgroundColor};
@@ -44,6 +65,9 @@ export const GlobalStyles = ({
   );
 };
 
+/** Outer shell radius for client-decorated windows (not maximized). */
+export const CLIENT_CHROME_CORNER_RADIUS_PX = 10;
+
 export const WindowDragBar = styled.div`
   position: fixed;
   width: 100vw;
@@ -52,20 +76,12 @@ export const WindowDragBar = styled.div`
   user-select: none;
 `;
 
-type WrapperProps = {
-  isTransparentWindowEnabled: boolean;
-};
-
-export const Wrapper = styled.div<WrapperProps>`
+export const Wrapper = styled.div`
   overflow: hidden;
   width: 100vw;
   height: 100vh;
   cursor: default;
   user-select: none;
-  background-color: ${({ isTransparentWindowEnabled }) =>
-    isDarwin && isTransparentWindowEnabled
-      ? 'transparent'
-      : 'var(--rcx-color-surface-room, #2f343d)'};
   display: flex;
   flex-flow: row nowrap;
 `;

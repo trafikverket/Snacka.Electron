@@ -1,41 +1,53 @@
 import { Box, FieldGroup } from '@rocket.chat/fuselage';
 
 import { AvailableBrowsers } from './features/AvailableBrowsers';
-import { ClearPermittedScreenCaptureServers } from './features/ClearPermittedScreenCaptureServers';
+import { DownloadsPercentage } from './features/DownloadsPercentage';
+import { E2ePdfPreviewSizeLimit } from './features/E2ePdfPreviewSizeLimit';
 import { FlashFrame } from './features/FlashFrame';
 import { HardwareAcceleration } from './features/HardwareAcceleration';
-import { InternalVideoChatWindow } from './features/InternalVideoChatWindow';
 import { MenuBar } from './features/MenuBar';
 import { MinimizeOnClose } from './features/MinimizeOnClose';
 import { NTLMCredentials } from './features/NTLMCredentials';
+import { NavigationLayout } from './features/NavigationLayout';
 import { OutlookCalendarSyncInterval } from './features/OutlookCalendarSyncInterval';
 import { ReportErrors } from './features/ReportErrors';
-import { ScreenCaptureFallback } from './features/ScreenCaptureFallback';
-import { SideBar } from './features/SideBar';
 import { ThemeAppearance } from './features/ThemeAppearance';
 import { TransparentWindow } from './features/TransparentWindow';
 import { TrayIcon } from './features/TrayIcon';
-import { VideoCallWindowPersistence } from './features/VideoCallWindowPersistence';
 
-export const GeneralTab = () => (
-  <Box display='flex' justifyContent='center'>
-    <FieldGroup is='form' maxWidth={600}>
-      <ReportErrors />
-      <FlashFrame />
-      <HardwareAcceleration />
-      {process.platform === 'win32' && <ScreenCaptureFallback />}
-      <InternalVideoChatWindow />
-      <VideoCallWindowPersistence />
-      {process.platform === 'darwin' && <TransparentWindow />}
-      <TrayIcon />
-      {process.platform === 'win32' && <MinimizeOnClose />}
-      <SideBar />
-      {process.platform !== 'darwin' && <MenuBar />}
-      {process.platform === 'win32' && <NTLMCredentials />}
-      <ThemeAppearance />
-      <AvailableBrowsers />
-      <OutlookCalendarSyncInterval />
-      {!process.mas && <ClearPermittedScreenCaptureServers />}
-    </FieldGroup>
-  </Box>
-);
+export const GeneralTab = () => {
+  const isDarwin = process.platform === 'darwin';
+  const isWin32 = process.platform === 'win32';
+
+  return (
+    <Box display='flex' justifyContent='center' p='x24'>
+      <Box is='form' width='x600' maxWidth='full'>
+        <FieldGroup>
+          <ThemeAppearance />
+          <NavigationLayout />
+        </FieldGroup>
+
+        <FieldGroup mbs='x24'>
+          {isDarwin && <TransparentWindow />}
+          <TrayIcon />
+          {isWin32 && <MinimizeOnClose />}
+          {!isDarwin && <MenuBar />}
+          <FlashFrame />
+          <DownloadsPercentage />
+        </FieldGroup>
+
+        <FieldGroup mbs='x24'>
+          <AvailableBrowsers />
+          <OutlookCalendarSyncInterval />
+        </FieldGroup>
+
+        <FieldGroup mbs='x24'>
+          <HardwareAcceleration />
+          <E2ePdfPreviewSizeLimit />
+          <ReportErrors />
+          {isWin32 && <NTLMCredentials />}
+        </FieldGroup>
+      </Box>
+    </Box>
+  );
+};

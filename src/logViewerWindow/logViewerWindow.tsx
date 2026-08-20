@@ -842,6 +842,7 @@ function LogViewerWindow() {
         <Box display='flex' alignItems='center' flexWrap='wrap'>
           <Box marginInlineEnd='x12'>
             <Select
+              aria-label={t('logViewer.placeholders.loadAmount')}
               placeholder={t('logViewer.placeholders.loadAmount')}
               value={entryLimit}
               options={entryLimitOptions}
@@ -859,6 +860,7 @@ function LogViewerWindow() {
           </Box>
           <Box marginInlineEnd='x12'>
             <Select
+              aria-label={t('logViewer.placeholders.level')}
               placeholder={t('logViewer.placeholders.level')}
               value={levelFilter}
               options={levelFilterOptions}
@@ -868,6 +870,7 @@ function LogViewerWindow() {
           </Box>
           <Box marginInlineEnd='x12'>
             <Select
+              aria-label={t('logViewer.placeholders.context')}
               placeholder={t('logViewer.placeholders.context')}
               value={contextFilter}
               options={contextFilterOptions}
@@ -878,6 +881,7 @@ function LogViewerWindow() {
           {serverFilterOptions.length > 1 && (
             <Box marginInlineEnd='x12'>
               <Select
+                aria-label={t('logViewer.filters.server.label')}
                 placeholder={t('logViewer.filters.server.all')}
                 value={serverFilter}
                 options={serverFilterOptions}
@@ -925,24 +929,23 @@ function LogViewerWindow() {
             </Box>
           )}
           {!isLoading && filteredLogs.length > 0 && (
-            <Box style={{ height: '100%', position: 'relative' }}>
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '8px',
-                  right: '8px',
-                  color: 'var(--rcx-color-font-hint)',
-                  fontSize: '12px',
-                  zIndex: 10,
-                  background: 'var(--rcx-color-surface-tint)',
-                  padding: '4px 8px',
-                  borderRadius: '4px',
-                }}
+            <Box height='100%' position='relative'>
+              <Box
+                position='absolute'
+                insetBlockStart='x8'
+                insetInlineEnd='x8'
+                zIndex={10}
+                pi='x8'
+                pb='x4'
+                borderRadius='x4'
+                bg='tint'
+                color='hint'
+                fontScale='c1'
               >
                 {t('logViewer.fileInfo.entries', {
                   count: filteredLogs.length,
                 })}
-              </div>
+              </Box>
               <Virtuoso
                 ref={virtuosoRef}
                 data={filteredLogs}
