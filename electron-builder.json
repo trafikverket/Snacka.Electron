@@ -35,7 +35,7 @@
       "zip"
     ],
     "icon": "build/icon.icns",
-    "bundleVersion": "26080",
+    "bundleVersion": "26081",
     "helperBundleId": "se.trafikverket.snacka.helper",
     "type": "distribution",
     "artifactName": "snacka-${version}-${os}.${ext}",
