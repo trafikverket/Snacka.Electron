@@ -220,7 +220,23 @@ git push origin 4.13.0
 3. Verifiera att artifacts skapas korrekt
 4. Se att release-artefakterna är Snacka (inte Rocket.Chat)
 
-### Steg 9: Rensa worktree
+### Steg 9: Överlämning till IKTii - IT-arbetsplats
+
+En publicerad GitHub-release når inte ut till någon klient av sig själv. MSI:n
+måste lämnas över till grupperingen **IKTii - IT-arbetsplats**, som lägger in
+den i **SCCM** för distribution till befintliga klienter och gör versionen
+gällande vid nybeställningar i beställningssystemet **Butler**.
+
+Skicka `snacka-<version>-win-x64.msi` om inget annat efterfrågas, och hänvisa
+till [enterprise-deployment.md](enterprise-deployment.md) för
+installationskommando, publika MSI-egenskaper och detekteringsidentifierare.
+
+Under inledningsfasen har överlämningen skett manuellt från fall till fall.
+Framöver ska den följa etablerade rutiner för applikationsleverans. Tills den
+rutinen är på plats: betrakta överlämningen som ett manuellt steg som måste
+utlösas aktivt för varje release.
+
+### Steg 10: Rensa worktree
 
 ```powershell
 # Från huvudkatalogen
