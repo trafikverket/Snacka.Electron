@@ -214,13 +214,12 @@ describe('msiProjectCreated shortcut icon rewrite', () => {
     expect(injected).not.toMatch(/<Shortcut [^>]*Icon="SnackaIcon.exe"/);
   });
 
-  it('targets the installed executable, whose path is stable across releases', () => {
-    expect(injected).toMatch(
-      /<Shortcut Id="desktopShortcut"[^>]*Target="\[#mainExecutable\]"/
-    );
-    expect(injected).toMatch(
-      /<Shortcut Id="startMenuShortcut"[^>]*Target="\[#mainExecutable\]"/
-    );
+  it('leaves the shortcut target implicit so candle CNDL0062 is not triggered', () => {
+    // The <Shortcut> is nested inside <File Id="mainExecutable">, which WiX
+    // treats as the implicit shortcut target. An explicit Target attribute on
+    // a nested shortcut fails candle with CNDL0062, so the rewrite must not
+    // add one.
+    expect(injected).not.toMatch(/<Shortcut [^>]*\bTarget=/);
   });
 
   it('keeps the AppUserModel.ID on the Start menu shortcut', () => {
