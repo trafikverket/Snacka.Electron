@@ -363,9 +363,13 @@ exports.default = async function msiProjectCreated(projectFile) {
   //
   // Making the shortcuts non-advertised drops the Icon attribute, so the shell
   // takes the icon from the target executable in the installation directory — a
-  // path that is identical across releases. [#mainExecutable] is the WiX file
-  // reference to the main executable, which electron-builder always emits with
-  // that Id.
+  // path that is identical across releases.
+  //
+  // The <Shortcut> elements are nested inside the <File Id="mainExecutable">,
+  // so WiX derives the shortcut Target implicitly from the parent File. Adding
+  // an explicit Target attribute fails with candle CNDL0062 ("The
+  // Shortcut/@Target attribute cannot be specified when the Shortcut element
+  // is nested underneath a File element.").
   //
   // Only the two <Shortcut> elements are rewritten. The <ProgId> and <Extension>
   // elements generated for the protocol registration carry the same Icon
@@ -375,7 +379,7 @@ exports.default = async function msiProjectCreated(projectFile) {
   if (!xml.includes('Id="mainExecutable"')) {
     throw new Error(
       `msiProjectCreated: no file with Id="mainExecutable" in the WiX project, ` +
-        `so shortcuts cannot target the installed executable — check ${projectFile}`
+        `so the nested shortcuts have no implicit target — check ${projectFile}`
     );
   }
 
@@ -389,10 +393,7 @@ exports.default = async function msiProjectCreated(projectFile) {
     );
   }
 
-  xml = xml.replace(
-    advertisedShortcut,
-    '$1 Advertise="no" Target="[#mainExecutable]"'
-  );
+  xml = xml.replace(advertisedShortcut, '$1 Advertise="no"');
 
   // -- 5. Build-time validation --
 

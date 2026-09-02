@@ -50,16 +50,22 @@ against `$INSTDIR\Snacka.exe`.
 
 ## The fix
 
-[build/msiProjectCreated.js](../build/msiProjectCreated.js) rewrites both
-shortcuts to be non-advertised and to target the installed executable:
+[build/msiProjectCreated.js](../build/msiProjectCreated.js) drops
+`Advertise="yes"` and the `Icon` attribute from both shortcuts:
 
 ```xml
-<Shortcut Id="startMenuShortcut" ... Advertise="no" Target="[#mainExecutable]">
+<Shortcut Id="startMenuShortcut" ... Advertise="no">
 ```
 
-Without an `Icon` attribute the shell reads the icon from `Snacka.exe` in the
-installation directory — a path that is identical across releases, so pins made
-from this version onwards survive future upgrades.
+The `<Shortcut>` elements are nested inside `<File Id="mainExecutable">`, so
+WiX derives the shortcut target implicitly from the parent File — the
+installed `Snacka.exe`. Without an `Icon` attribute the shell reads the icon
+from that same executable, whose path is identical across releases, so pins
+made from this version onwards survive future upgrades.
+
+An explicit `Target="[#mainExecutable]"` on a nested `<Shortcut>` is invalid
+and fails candle with `CNDL0062`; the parent-File nesting is what makes it
+work.
 
 The `<ProgId>` and `<Extension>` elements used for protocol registration keep
 their advertised `Icon` attribute; only the two `<Shortcut>` elements change.
