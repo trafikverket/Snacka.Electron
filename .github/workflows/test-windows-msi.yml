@@ -1,0 +1,51 @@
+name: Test Windows MSI build
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    permissions:
+      contents: read
+    runs-on: windows-latest
+    steps:
+      - name: Disable git core.autocrlf
+        run: git config --global core.autocrlf false
+
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node 24.11.1
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.11.1'
+
+      - name: Setup node_modules cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: '**/node_modules'
+          key: ${{ runner.os }}-modules-${{ hashFiles('**/yarn.lock') }}
+
+      - name: Install package dependencies
+        run: yarn install
+
+      - name: Build app/
+        run: yarn build
+        env:
+          NODE_ENV: production
+
+      - name: Build unsigned MSI (x64, ia32, arm64)
+        shell: pwsh
+        run: yarn electron-builder --publish never --x64 --ia32 --arm64 --win msi
+
+      - name: Upload MSI artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: snacka-msi-${{ github.sha }}
+          path: dist/*.msi
+          if-no-files-found: error
+          retention-days: 14
