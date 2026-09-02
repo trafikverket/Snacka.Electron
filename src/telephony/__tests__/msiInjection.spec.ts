@@ -8,14 +8,44 @@ const buildHook = jest.requireActual<{
 }>('../../../build/msiProjectCreated.js');
 const hook = buildHook.default;
 
+// Mirrors the shape electron-builder's MsiTarget emits: the main executable
+// carries the shortcuts as children, and the protocol ProgId/Extension pair
+// shares the same Icon table entry.
 const SAMPLE_WXS = `<?xml version="1.0" encoding="UTF-8"?>
 <Wix>
   <Product Id="*" Name="Snacka">
+    <Icon Id="SnackaIcon.exe" SourceFile="icon.ico"/>
+    <Property Id="ARPPRODUCTICON" Value="SnackaIcon.exe"/>
+    <ComponentGroup Id="ProductComponents" Directory="APPLICATIONFOLDER">
+      <Component>
+        <File Name="Snacka.exe" Source="$(var.appDir)\\Snacka.exe" ReadOnly="yes" KeyPath="yes" Id="mainExecutable">
+          <Shortcut Id="desktopShortcut" Directory="DesktopFolder" Name="Snacka" WorkingDirectory="APPLICATIONFOLDER" Advertise="yes" Icon="SnackaIcon.exe"/>
+          <Shortcut Id="startMenuShortcut" Directory="ProgramMenuFolder" Name="Snacka" WorkingDirectory="APPLICATIONFOLDER" Advertise="yes" Icon="SnackaIcon.exe">
+            <ShortcutProperty Key="System.AppUserModel.ID" Value="se.trafikverket.snacka"/>
+          </Shortcut>
+          <ProgId Id="Snacka.snacka" Advertise="yes" Icon="SnackaIcon.exe">
+            <Extension Id="snacka" Advertise="yes"/>
+          </ProgId>
+        </File>
+      </Component>
+    </ComponentGroup>
     <InstallExecuteSequence>
       <Custom Action="Existing" After="InstallFiles" />
     </InstallExecuteSequence>
   </Product>
 </Wix>`;
+
+const runHook = async (wxs: string): Promise<string> => {
+  const dir = mkdtempSync(join(tmpdir(), 'msi-inject-'));
+  const file = join(dir, 'test.wxs');
+  writeFileSync(file, wxs, 'utf8');
+  try {
+    await hook(file);
+    return readFileSync(file, 'utf8');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+};
 
 describe('msiProjectCreated default-associations injection', () => {
   let workDir: string;
@@ -154,6 +184,70 @@ describe('msiProjectCreated default-associations injection', () => {
     );
     expect(injected).toMatch(
       /<Custom Action="CleanupTelephonyCapabilities"[^>]*>REMOVE~="ALL" AND UPGRADINGPRODUCTCODE=""<\/Custom>/
+    );
+  });
+});
+
+describe('msiProjectCreated shortcut icon rewrite', () => {
+  let injected: string;
+
+  beforeAll(async () => {
+    injected = await runHook(SAMPLE_WXS);
+  });
+
+  it('makes the desktop and Start menu shortcuts non-advertised', () => {
+    expect(injected).not.toMatch(
+      /<Shortcut Id="(?:desktopShortcut|startMenuShortcut)"[^>]*Advertise="yes"/
+    );
+    expect(injected).toMatch(
+      /<Shortcut Id="desktopShortcut"[^>]*Advertise="no"/
+    );
+    expect(injected).toMatch(
+      /<Shortcut Id="startMenuShortcut"[^>]*Advertise="no"/
+    );
+  });
+
+  it('drops the Icon table reference so the icon path is not ProductCode-scoped', () => {
+    // The Icon table copy lands in C:\Windows\Installer\{ProductCode}\, which a
+    // major upgrade deletes — taskbar pins made against the old release then
+    // render without an icon.
+    expect(injected).not.toMatch(/<Shortcut [^>]*Icon="SnackaIcon.exe"/);
+  });
+
+  it('targets the installed executable, whose path is stable across releases', () => {
+    expect(injected).toMatch(
+      /<Shortcut Id="desktopShortcut"[^>]*Target="\[#mainExecutable\]"/
+    );
+    expect(injected).toMatch(
+      /<Shortcut Id="startMenuShortcut"[^>]*Target="\[#mainExecutable\]"/
+    );
+  });
+
+  it('keeps the AppUserModel.ID on the Start menu shortcut', () => {
+    expect(injected).toContain(
+      '<ShortcutProperty Key="System.AppUserModel.ID" Value="se.trafikverket.snacka"/>'
+    );
+  });
+
+  it('leaves the protocol ProgId and Extension advertised', () => {
+    expect(injected).toContain(
+      '<ProgId Id="Snacka.snacka" Advertise="yes" Icon="SnackaIcon.exe">'
+    );
+    expect(injected).toContain('<Extension Id="snacka" Advertise="yes"/>');
+  });
+
+  it('fails the build when the main executable file id is gone', async () => {
+    const withoutMainExe = SAMPLE_WXS.replace(' Id="mainExecutable"', '');
+    await expect(runHook(withoutMainExe)).rejects.toThrow(/mainExecutable/);
+  });
+
+  it('fails the build when the shortcut markup no longer matches', async () => {
+    const withoutShortcuts = SAMPLE_WXS.replace(
+      /<Shortcut[\s\S]*<\/Shortcut>/,
+      ''
+    );
+    await expect(runHook(withoutShortcuts)).rejects.toThrow(
+      /no advertised desktop or Start menu shortcut/
     );
   });
 });

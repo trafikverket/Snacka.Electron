@@ -348,7 +348,53 @@ exports.default = async function msiProjectCreated(projectFile) {
   // 3b. Inject property and custom action definitions before </Product>
   xml = xml.replace('</Product>', `${propertyAndActions}\n  </Product>`);
 
-  // -- 4. Build-time validation --
+  // -- 4. Non-advertised shortcuts so the icon comes from the installed exe --
+  //
+  // electron-builder emits the desktop and Start menu shortcuts as
+  // Advertise="yes" with Icon="<prefix>Icon.exe", which resolves to the Icon
+  // table copy that Windows Installer extracts to
+  // C:\Windows\Installer\{ProductCode}\. The template uses Product Id="*", so
+  // ProductCode is regenerated per release and a major upgrade deletes the
+  // previous folder. The Start menu shortcut is rewritten by the installer and
+  // survives, but the taskbar pin under
+  // %APPDATA%\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar is a
+  // copy no installer touches — it keeps pointing at the removed folder and
+  // renders without an icon.
+  //
+  // Making the shortcuts non-advertised drops the Icon attribute, so the shell
+  // takes the icon from the target executable in the installation directory — a
+  // path that is identical across releases. [#mainExecutable] is the WiX file
+  // reference to the main executable, which electron-builder always emits with
+  // that Id.
+  //
+  // Only the two <Shortcut> elements are rewritten. The <ProgId> and <Extension>
+  // elements generated for the protocol registration carry the same Icon
+  // attribute and must stay advertised, so the match is anchored on the
+  // shortcut ids.
+
+  if (!xml.includes('Id="mainExecutable"')) {
+    throw new Error(
+      `msiProjectCreated: no file with Id="mainExecutable" in the WiX project, ` +
+        `so shortcuts cannot target the installed executable — check ${projectFile}`
+    );
+  }
+
+  const advertisedShortcut =
+    /(<Shortcut Id="(?:desktopShortcut|startMenuShortcut)"[^>]*?)\s+Advertise="yes"\s+Icon="[^"]*"/g;
+
+  if ((xml.match(advertisedShortcut) || []).length === 0) {
+    throw new Error(
+      `msiProjectCreated: found no advertised desktop or Start menu shortcut to ` +
+        `rewrite. electron-builder's shortcut markup may have changed — check ${projectFile}`
+    );
+  }
+
+  xml = xml.replace(
+    advertisedShortcut,
+    '$1 Advertise="no" Target="[#mainExecutable]"'
+  );
+
+  // -- 5. Build-time validation --
 
   if (!xml.includes('DISABLE_AUTO_UPDATES')) {
     throw new Error(
@@ -416,6 +462,18 @@ exports.default = async function msiProjectCreated(projectFile) {
     throw new Error(
       `msiProjectCreated: failed to inject CleanupTelephonyCapabilities custom action into WiX project. ` +
         `The generated .wxs structure may have changed — check ${projectFile}`
+    );
+  }
+
+  if (
+    /<Shortcut Id="(?:desktopShortcut|startMenuShortcut)"[^>]*Advertise="yes"/.test(
+      xml
+    )
+  ) {
+    throw new Error(
+      `msiProjectCreated: an advertised shortcut survived the rewrite, so its ` +
+        `icon would still resolve under the per-ProductCode Windows Installer ` +
+        `cache instead of the installation directory — check ${projectFile}`
     );
   }
 
