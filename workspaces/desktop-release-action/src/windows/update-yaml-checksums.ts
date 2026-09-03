@@ -1,18 +1,19 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as crypto from 'crypto';
+
 import * as core from '@actions/core';
 import * as yaml from 'js-yaml';
 
-interface YamlFile {
+interface IYamlFile {
   url: string;
   sha512: string;
   size: number;
 }
 
-interface LatestYaml {
+interface ILatestYaml {
   version: string;
-  files: YamlFile[];
+  files: IYamlFile[];
   path: string;
   sha512: string;
   releaseDate: string;
@@ -57,7 +58,7 @@ export const updateWindowsYamlChecksums = async (
   try {
     // Read and parse the existing YAML file
     const yamlContent = fs.readFileSync(yamlPath, 'utf8');
-    const yamlData = yaml.load(yamlContent) as LatestYaml;
+    const yamlData = yaml.load(yamlContent) as ILatestYaml;
 
     core.info(`Updating checksums for version ${yamlData.version}`);
 

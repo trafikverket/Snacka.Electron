@@ -1,8 +1,9 @@
-import * as core from '@actions/core';
-import * as path from 'path';
-import * as glob from 'glob';
 import { exec } from 'child_process';
+import * as path from 'path';
 import { promisify } from 'util';
+
+import * as core from '@actions/core';
+import * as glob from 'glob';
 
 const execAsync = promisify(exec);
 

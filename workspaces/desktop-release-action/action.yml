@@ -1,5 +1,5 @@
-name: Snacka Desktop App Release Action
-description: Releases the Snacka Desktop app
+name: Rocket.Chat Desktop App Release Action
+description: Releases the Rocket.Chat Desktop app
 
 inputs:
   ref:
@@ -13,25 +13,25 @@ inputs:
     required: false
   mac_csc_link:
     description: 'The base64-encoded data of certificates (*.p12) for code signing for macOS'
-    required: false
+    required: true
   mac_csc_key_password:
     description: 'The password to decrypt the certificates for code signing for macOS'
-    required: false
+    required: true
   mac_apple_id:
     description: 'The Apple ID for notarization'
-    required: false
+    required: true
   mac_apple_id_password:
     description: 'The password associated to Apple ID for notarization'
-    required: false
+    required: true
   mac_asc_provider:
     description: 'The membership account associated with the Apple Developer account'
-    required: false
+    required: true
   gcp_sa_json:
     description: 'Google Cloud service account JSON for KMS authentication'
-    required: false
+    required: true
   win_kms_key_resource:
     description: 'Google Cloud KMS key resource (projects/.../locations/.../keyRings/.../cryptoKeys/.../cryptoKeyVersions/N)'
-    required: false
+    required: true
   win_kms_cert_sha1:
     description: 'SHA1 thumbprint of the issued code signing certificate (optional if win_user_crt provided)'
     required: false
@@ -53,7 +53,10 @@ inputs:
   github_token:
     description: 'The GitHub token to publish releases'
     required: true
+  snapcraft_token:
+    description: 'The Snapcraft token to publish releases'
+    required: true
 
 runs:
-  using: 'node12'
+  using: 'node24'
   main: 'dist/index.js'

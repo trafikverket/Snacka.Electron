@@ -155,6 +155,21 @@ command on. Ready for distribution file will be outputted to `dist` directory.
 All packaging actions are handled by [electron-builder][]. It has a lot of
 [customization options][].
 
+## Development and Releases
+
+All pull requests target `dev`; `master` contains only released code, and
+`release/X.Y.x` branches carry patch releases for a shipped version.
+Releases are tag-driven — pushing a semver tag triggers CI to build every
+platform and draft a GitHub release, which a human then reviews and
+publishes.
+
+- [docs/development-and-release-flow.md][] — conceptual overview of the
+  branch model, versioning, and CI/CD.
+- [docs/release-process.md][] — operational runbook with the exact commands
+  for cutting alpha, stable, and patch releases.
+- [.github/CONTRIBUTING.md][] — contribution guidelines, including which
+  branch to target.
+
 ## Default servers
 
 The `servers.json` file will define what servers the client will connect to and
@@ -216,17 +231,18 @@ a single server mode.
 
 #### The settings that can be overridden are:
 
-| Setting                                    | Description                                                                                            |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `"isReportEnabled": true`                  | Sets if the bugs will be reported to developers.                                                       |
-| `"isInternalVideoChatWindowEnabled": true` | Sets if video calls will be opened in an internal window.                                              |
-| `"isFlashFrameEnabled": true`              | Sets if the flash frame will be enabled.                                                               |
-| `"isMinimizeOnCloseEnabled": false`        | Sets if the app will be minimized on close.                                                            |
-| `"doCheckForUpdatesOnStartup": true`       | Sets if the app will check for updates on startup.                                                     |
-| `"isMenuBarEnabled": false`                | Windows/Linux: `true` keeps the menu bar always visible; `false` auto-hides it (Alt shows it temporarily). Unused on macOS. |
-| `"isTrayIconEnabled": true`                | Enables Tray Icon, the app will be hidden to the tray on close. Overrides `"isMinimizeOnCloseEnabled"` |
-| `"isUpdatingEnabled": true`                | Sets if the app can be updated by the user.                                                            |
-| `"isAddNewServersEnabled": true`           | Sets if the user can add new servers.                                                                  |
+| Setting                                    | Description                                                                                                                                                  |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `"isReportEnabled": true`                  | Sets if the bugs will be reported to developers.                                                                                                             |
+| `"isInternalVideoChatWindowEnabled": true` | Sets if video calls will be opened in an internal window.                                                                                                    |
+| `"isFlashFrameEnabled": true`              | Sets if the flash frame will be enabled.                                                                                                                     |
+| `"isMinimizeOnCloseEnabled": false`        | Sets if the app will be minimized on close.                                                                                                                  |
+| `"doCheckForUpdatesOnStartup": true`       | Sets if the app will check for updates on startup.                                                                                                           |
+| `"isMenuBarEnabled": false`                | Windows/Linux: `true` keeps the menu bar always visible; `false` auto-hides it (Alt shows it temporarily). Unused on macOS.                                  |
+| `"isTrayIconEnabled": true`                | Enables Tray Icon, the app will be hidden to the tray on close. Overrides `"isMinimizeOnCloseEnabled"`                                                       |
+| `"isUpdatingEnabled": true`                | Sets if the app can be updated by the user.                                                                                                                  |
+| `"isAddNewServersEnabled": true`           | Sets if the user can add new servers.                                                                                                                        |
+| `"isNotificationQuickReplyEnabled": true`  | Sets if notifications are created with an inline reply field. When set to `false`, notifications are created without the inline reply field (Windows/macOS). |
 
 ##### Single server mode
 
@@ -265,3 +281,6 @@ Released under the MIT license.
 [Jest electron runner]: https://github.com/kayahr/jest-electron-runner
 [electron-builder]: https://github.com/electron-userland/electron-builder
 [customization options]: https://www.electron.build/configuration
+[docs/development-and-release-flow.md]: docs/development-and-release-flow.md
+[docs/release-process.md]: docs/release-process.md
+[.github/CONTRIBUTING.md]: .github/CONTRIBUTING.md

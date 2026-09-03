@@ -253,8 +253,7 @@
       },
       "menubar": {
         "title": "Barra de menus",
-        "description": "Mostra a barra de menus no topo da aplicação",
-        "disabledHint": "Não é possível desativar a barra de menus quando a barra lateral está desativada. As configurações se tornariam inacessíveis."
+        "description": "Mostra a barra de menus no topo da aplicação"
       },
       "sidebar": {
         "title": "Barra lateral",
@@ -359,7 +358,8 @@
     "viewMenu": "&Exibir",
     "windowMenu": "&Janela",
     "zoomIn": "Aumentar zoom",
-    "zoomOut": "Diminuir zoom"
+    "zoomOut": "Diminuir zoom",
+    "simulateDisconnected": "Simular desconexão"
   },
   "loadingError": {
     "title": "Servidor Falhou em Carregar",
@@ -472,6 +472,16 @@
         "title": "{{- appName}} ainda está rodando",
         "content": "{{- appName }} está configurado para permanecer em funcionamento na bandeja do sistema/área de notificação."
       }
+    },
+    "presence": {
+      "status": "Status",
+      "online": "Online",
+      "away": "Ausente",
+      "busy": "Ocupado",
+      "offline": "Offline",
+      "disconnected": "Desconectado — tentando reconectar...",
+      "signIn": "Entrar em {{- workspace}}",
+      "addWorkspace": "Adicionar espaço de trabalho"
     }
   },
   "taskbar": {

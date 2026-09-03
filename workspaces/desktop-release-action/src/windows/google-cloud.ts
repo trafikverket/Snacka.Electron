@@ -1,7 +1,9 @@
-import * as core from '@actions/core';
-import * as exec from '@actions/exec';
 import * as fs from 'fs';
 import * as path from 'path';
+
+import * as core from '@actions/core';
+import * as exec from '@actions/exec';
+
 import { runAndBuffer } from '../shell';
 
 export const setupGoogleCloudAuth = async (): Promise<string> => {
@@ -68,6 +70,14 @@ export const authenticateGcloud = async (
 
   // Verify authentication is working
   core.info('Verifying gcloud authentication...');
-  await exec.exec(`${gcloudPath}\\gcloud.cmd`, ['auth', 'print-access-token']);
-  core.info('✅ Google Cloud authentication successful');
+  const token = (
+    await runAndBuffer(`"${gcloudPath}\\gcloud.cmd" auth print-access-token`)
+  ).trim();
+  if (!token) {
+    throw new Error('gcloud auth print-access-token returned an empty token');
+  }
+  core.setSecret(token);
+  core.info(
+    `Google Cloud authentication successful (token acquired, ${token.length} chars)`
+  );
 };

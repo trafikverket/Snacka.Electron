@@ -1,6 +1,8 @@
-import * as core from '@actions/core';
-import * as path from 'path';
 import * as fs from 'fs';
+import * as path from 'path';
+
+import * as core from '@actions/core';
+
 import { run } from '../shell';
 
 export const installKmsCngProvider = async (): Promise<void> => {

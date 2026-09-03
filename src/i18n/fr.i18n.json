@@ -246,8 +246,7 @@
       },
       "menubar": {
         "title": "Barre de menu",
-        "description": "Afficher la barre de menus en haut de la fenêtre.",
-        "disabledHint": "Impossible de désactiver la barre de menu quand la barre latérale est désactivée. Les paramètres deviendraient inaccessibles."
+        "description": "Afficher la barre de menus en haut de la fenêtre."
       },
       "sidebar": {
         "title": "Barre latérale",
@@ -338,7 +337,8 @@
     "viewMenu": "&Voir",
     "windowMenu": "&Fenêtre",
     "zoomIn": "Zoomer",
-    "zoomOut": "Zoom arrière"
+    "zoomOut": "Zoom arrière",
+    "simulateDisconnected": "Simuler une déconnexion"
   },
   "loadingError": {
     "title": "Echec du chargement du serveur",
@@ -436,6 +436,16 @@
         "title": "{{- appName}} est toujours en cours d'exécution",
         "content": "{{- appName }} est configuré pour continuer à fonctionner dans la barre d'état système / zone de notification."
       }
+    },
+    "presence": {
+      "status": "Statut",
+      "online": "En ligne",
+      "away": "Absent",
+      "busy": "Occupé",
+      "offline": "Hors ligne",
+      "disconnected": "Déconnecté — tentative de reconnexion...",
+      "signIn": "Se connecter à {{- workspace}}",
+      "addWorkspace": "Ajouter un espace de travail"
     }
   },
   "taskbar": {

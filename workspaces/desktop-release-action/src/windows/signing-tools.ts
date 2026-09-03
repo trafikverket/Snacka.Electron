@@ -1,7 +1,9 @@
-import * as core from '@actions/core';
-import * as exec from '@actions/exec';
 import * as fs from 'fs';
 import * as path from 'path';
+
+import * as core from '@actions/core';
+import * as exec from '@actions/exec';
+
 import { runAndBuffer } from '../shell';
 
 export const findSigntool = async (): Promise<void> => {
@@ -33,7 +35,7 @@ export const findSigntool = async (): Promise<void> => {
 
 export const installJsign = async (): Promise<void> => {
   core.info('Installing OpenJDK 11...');
-  await exec.exec('choco', ['install', 'openjdk11', '-y']);
+  await exec.exec('choco', ['install', 'openjdk11', '-y', '--no-progress']);
 
   // Refresh environment to pick up Java
   await exec.exec('refreshenv');
@@ -56,7 +58,7 @@ export const installJsign = async (): Promise<void> => {
   }
 
   core.info('Installing jsign...');
-  await exec.exec('choco', ['install', 'jsign', '-y']);
+  await exec.exec('choco', ['install', 'jsign', '-y', '--no-progress']);
 
   // Refresh environment variables to pick up PATH changes from jsign
   await exec.exec('refreshenv');

@@ -1,6 +1,8 @@
-import * as core from '@actions/core';
 import * as fs from 'fs';
 import * as path from 'path';
+
+import * as core from '@actions/core';
+
 import { run, runAndBuffer } from '../shell';
 
 export const addCertToStore = async (
@@ -8,8 +10,12 @@ export const addCertToStore = async (
   certPath?: string,
   user: boolean = true
 ): Promise<void> => {
-  if (!certPath || !fs.existsSync(certPath)) {
-    core.info(`Certificate file not found or not provided: ${certPath}`);
+  if (!certPath) {
+    core.debug('Certificate path not provided, skipping.');
+    return;
+  }
+  if (!fs.existsSync(certPath)) {
+    core.info(`Certificate file not found: ${certPath}`);
     return;
   }
 
@@ -73,7 +79,7 @@ export const verifyCertificateInStore = async (
     core.info('✅ Certificate reports having a private key');
   } else {
     core.info(
-      '⚠️ Certificate does NOT have a private key - this is expected for KMS'
+      '⚠ Certificate does NOT have a private key - this is expected for KMS'
     );
   }
 };

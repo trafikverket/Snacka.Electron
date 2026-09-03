@@ -246,8 +246,7 @@
       },
       "menubar": {
         "title": "Valikkopalkki",
-        "description": "Näytä valikkopalkki ikkunan yläreunassa.",
-        "disabledHint": "Valikkopalkkinsa poisto ei ole mahdollista, kun sivupalkki on pois käytöstä. Asetukset tulisivat saavuttamattomiksi."
+        "description": "Näytä valikkopalkki ikkunan yläreunassa."
       },
       "sidebar": {
         "title": "Sivupalkki",
@@ -337,7 +336,8 @@
     "viewMenu": "&Näytä",
     "windowMenu": "&Ikkuna",
     "zoomIn": "Lähennä",
-    "zoomOut": "Loitonna"
+    "zoomOut": "Loitonna",
+    "simulateDisconnected": "Simuloi yhteyden katkeamista"
   },
   "loadingError": {
     "title": "Palvelimen lataus epäonnistui",
@@ -435,6 +435,16 @@
         "title": "{{- appName}} on edelleen käynnissä",
         "content": "{{- appName }} on määritetty pysymään käynnissä ilmaisinalueella."
       }
+    },
+    "presence": {
+      "status": "Tila",
+      "online": "Paikalla",
+      "away": "Poissa",
+      "busy": "Varattu",
+      "offline": "Poissa linjoilta",
+      "disconnected": "Yhteys katkesi — yritetään yhdistää uudelleen...",
+      "signIn": "Kirjaudu työtilaan {{- workspace}}",
+      "addWorkspace": "Lisää työtila"
     }
   },
   "taskbar": {
