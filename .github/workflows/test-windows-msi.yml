@@ -4,6 +4,9 @@ permissions: {}
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'upgrade-v*'
 
 jobs:
   build:
