@@ -75,14 +75,17 @@ describe('resolveServerUrl', () => {
     expect(convertToURL('chat.example').hostname).toBe('chat.example');
   });
 
-  it('retries as a rocket.chat subdomain for bare-word input and returns INVALID on failure', async () => {
+  it('retries as an app.trafikverket.se subdomain for bare-word input and returns INVALID on failure', async () => {
+    // Snacka's `urls.rocketchat.subdomain(...)` (used as the bare-word
+    // fallback in src/servers/main.ts) resolves to `app.trafikverket.se` per
+    // src/urls.ts — this replaces upstream's `rocket.chat` subdomain.
     invoke.mockRejectedValue(new Error('network'));
     const [, status] = await resolveServerUrl('myworkspace');
     expect(status).toBe(ServerUrlResolutionStatus.INVALID);
     expect(invoke).toHaveBeenCalledWith(
       expect.anything(),
       'servers/fetch-info',
-      'https://myworkspace.rocket.chat/'
+      'https://myworkspace.app.trafikverket.se/'
     );
   });
 });
