@@ -15,8 +15,8 @@
 const { promises: fs } = require('fs');
 const path = require('path');
 
-const sharp = require('sharp');
 const icoConvert = require('@fiahfy/ico-convert');
+const sharp = require('sharp');
 
 // Snacka logo path lifted from ikon-snacka-nomargin_v2.svg. Coord range
 // 64..576 in both axes; wrap in translate(-64 -64) to sit in a 0..512 box.
@@ -64,8 +64,7 @@ const svgFor = (props, iconColor) => {
   }
   if (props.presence) {
     const pc = PRESENCE_COLORS[props.presence];
-    const overlay =
-      props.presence === 'offline' ? offlineRing(pc) : bullet(pc);
+    const overlay = props.presence === 'offline' ? offlineRing(pc) : bullet(pc);
     return buildSvg({ color: iconColor, overlay });
   }
   return buildSvg({ color: iconColor });
@@ -119,18 +118,21 @@ const writeMacDefault = async () => {
 };
 
 const main = async () => {
-  await writeWindows({}, 'default');
-  await writeLinux({}, 'default');
-  await writeMacDefault();
-
-  for (const presence of ['online', 'away', 'busy', 'offline']) {
-    await writeWindows({ presence }, `presence-${presence}`);
-    await writeLinux({ presence }, `presence-${presence}`);
-    await writeMac({ presence }, `presence-${presence}`);
-  }
-  await writeWindows({ disconnected: true }, 'disconnected');
-  await writeLinux({ disconnected: true }, 'disconnected');
-  await writeMac({ disconnected: true }, 'disconnected');
+  const presences = ['online', 'away', 'busy', 'offline'];
+  const jobs = [
+    () => writeWindows({}, 'default'),
+    () => writeLinux({}, 'default'),
+    () => writeMacDefault(),
+    ...presences.flatMap((presence) => [
+      () => writeWindows({ presence }, `presence-${presence}`),
+      () => writeLinux({ presence }, `presence-${presence}`),
+      () => writeMac({ presence }, `presence-${presence}`),
+    ]),
+    () => writeWindows({ disconnected: true }, 'disconnected'),
+    () => writeLinux({ disconnected: true }, 'disconnected'),
+    () => writeMac({ disconnected: true }, 'disconnected'),
+  ];
+  await Promise.all(jobs.map((job) => job()));
 };
 
 main().catch((err) => {
